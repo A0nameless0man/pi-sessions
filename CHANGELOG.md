@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.13.1] - 2026-09-28
+
+### Fixed
+
+- Adapted handoff instructions to Pi’s new system-prompt sections.
+
 ## [0.13.0] - 2026-09-28
 
 ### Added

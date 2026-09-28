@@ -92,7 +92,7 @@ beforeEach(() => {
 });
 
 describe("session handoff extension", () => {
-  it("registers the picker shortcut and keeps the session token system prompt note", async () => {
+  it("registers the picker shortcut and adds the session token note without freezing the prompt", async () => {
     const { installHandoff } = await import("../extensions/session-handoff/install.ts");
     const handlers = new Map<string, (event: unknown, ctx?: unknown) => Promise<unknown>>();
     const shortcuts = new Map<string, { handler: (ctx: unknown) => Promise<void> }>();
@@ -108,10 +108,17 @@ describe("session handoff extension", () => {
     expect(shortcuts.has("alt+o")).toBe(true);
 
     const beforeAgentStartHandler = handlers.get("before_agent_start");
-    await expect(beforeAgentStartHandler?.({ systemPrompt: "Base prompt" })).resolves.toEqual({
-      systemPrompt:
-        "Base prompt\n\nWhen the user references @session:<uuid>, treat it as a session token. If you call session_ask, pass only the UUID value, not the @session: prefix.",
+    const event = {
+      systemPrompt: "Base prompt",
+      systemPromptOptions: { sections: { other_extension: "Current instructions" } },
+    };
+    await expect(beforeAgentStartHandler?.(event)).resolves.toBeUndefined();
+    expect(event.systemPromptOptions.sections).toEqual({
+      other_extension: "Current instructions",
+      pi_sessions_session_token:
+        "When the user references @session:<uuid>, treat it as a session token. If you call session_ask, pass only the UUID value, not the @session: prefix.",
     });
+    expect(event.systemPrompt).toBe("Base prompt");
   });
 
   it("opens the picker from alt+o and pastes the canonical token", async () => {

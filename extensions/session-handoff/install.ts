@@ -31,6 +31,10 @@ import { buildHandoffLaunchSchema, buildHandoffPromptGuidelines } from "./tool-s
 import { buildHandoffToolView } from "./tool-view-model.ts";
 import { formatHandoffError } from "./ui.ts";
 
+const SESSION_TOKEN_PROMPT_SECTION = "pi_sessions_session_token";
+const SESSION_TOKEN_PROMPT =
+  "When the user references @session:<uuid>, treat it as a session token. If you call session_ask, pass only the UUID value, not the @session: prefix.";
+
 interface HandoffToolRendererState {
   callComponent?: HandoffToolComponent | undefined;
 }
@@ -196,11 +200,7 @@ export function installHandoff(
         (await splitBackend.identifyTerminalId(ctx.cwd)) ?? identifiedGhosttyTerminalId;
     }
 
-    return {
-      systemPrompt:
-        event.systemPrompt +
-        "\n\nWhen the user references @session:<uuid>, treat it as a session token. If you call session_ask, pass only the UUID value, not the @session: prefix.",
-    };
+    event.systemPromptOptions.sections[SESSION_TOKEN_PROMPT_SECTION] = SESSION_TOKEN_PROMPT;
   });
 
   return {
