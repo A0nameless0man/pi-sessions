@@ -3,7 +3,6 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-  ModelRuntime,
   TurnEndEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { SessionLifecycle } from "../shared/composition.ts";
@@ -82,7 +81,6 @@ export function installAutoTitle(
             },
           },
           ctx,
-          modelRuntime,
           resolution?.model,
           invocation,
           buildGeneration(resolution),
@@ -105,7 +103,6 @@ export function installAutoTitle(
       pi,
       controller,
       ctx,
-      modelRuntime,
       model: resolution?.model,
       isManual: false,
       existingPlan: result.plan,
@@ -147,7 +144,6 @@ async function handleTitleInvocation(
   pi: ExtensionAPI,
   state: TitleRunState,
   ctx: ExtensionCommandContext,
-  modelRuntime: ModelRuntime,
   model: Model<Api> | undefined,
   invocation: RetitleCommandInvocation,
   generation: AutoTitleGeneration,
@@ -156,7 +152,6 @@ async function handleTitleInvocation(
     pi,
     controller: state.controller,
     ctx,
-    modelRuntime,
     model,
     isManual: true,
     generation,
@@ -178,15 +173,7 @@ async function handleTitleInvocation(
       return retitleCurrentSession();
     }
 
-    return showRetitleWizard(
-      pi,
-      state.controller,
-      ctx,
-      modelRuntime,
-      model,
-      state.getSessionEpoch,
-      generation,
-    );
+    return showRetitleWizard(pi, state.controller, ctx, model, state.getSessionEpoch, generation);
   }
 
   if (invocation.scope === "this") {
@@ -194,21 +181,12 @@ async function handleTitleInvocation(
   }
 
   if (isTuiMode(ctx) && !invocation.force) {
-    return showRetitleWizard(
-      pi,
-      state.controller,
-      ctx,
-      modelRuntime,
-      model,
-      state.getSessionEpoch,
-      generation,
-      {
-        initialInvocation: {
-          scope: invocation.scope,
-          mode: invocation.mode ?? "backfill",
-        },
+    return showRetitleWizard(pi, state.controller, ctx, model, state.getSessionEpoch, generation, {
+      initialInvocation: {
+        scope: invocation.scope,
+        mode: invocation.mode ?? "backfill",
       },
-    );
+    });
   }
 
   const scan = await buildRetitleScopeScan(ctx, invocation.scope);
@@ -218,7 +196,6 @@ async function handleTitleInvocation(
       pi,
       state.controller,
       ctx,
-      modelRuntime,
       model,
       scan,
       mode,

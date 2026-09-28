@@ -63,7 +63,6 @@ function setup() {
       getLastFailure: () => undefined,
     } as never,
     ctx as never,
-    {} as never,
     undefined,
     () => 0,
     {} as never,

@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, TextContent, UserMessage } from "@earendil-works/pi-ai";
-import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AutoTitleContext } from "./context.ts";
 import { type AutoTitleRun, startAutoTitleRun } from "./runs.ts";
 import type { AutoTitleTrigger } from "./state.ts";
@@ -33,7 +33,7 @@ export type AutoTitleGenerationResult =
     };
 
 export async function generateAutoTitle(
-  modelRuntime: ModelRuntime,
+  modelRegistry: ModelRegistry,
   model: Model<Api>,
   context: AutoTitleContext,
   trigger: AutoTitleTrigger,
@@ -78,18 +78,21 @@ export async function generateAutoTitle(
     : undefined;
 
   try {
-    const response = await modelRuntime.completeSimple(
-      model,
-      {
-        systemPrompt: resolvedSystemPrompt,
-        messages: [message],
-      },
-      {
-        maxTokens: generation.tokenBudget,
-        ...(thinkingLevel && thinkingLevel !== "off" ? { reasoning: thinkingLevel } : {}),
-        signal: abortController.signal,
-      },
-    );
+    const response = await modelRegistry
+      .streamSimple(
+        model,
+        {
+          systemPrompt: resolvedSystemPrompt,
+          messages: [message],
+        },
+        {
+          maxTokens: generation.tokenBudget,
+          ...(thinkingLevel && thinkingLevel !== "off" ? { reasoning: thinkingLevel } : {}),
+          signal: abortController.signal,
+          cacheRetention: "none",
+        },
+      )
+      .result();
     run?.recordResponse(response);
 
     if (response.stopReason === "error" || response.stopReason === "aborted") {

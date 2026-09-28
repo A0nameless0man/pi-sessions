@@ -2,6 +2,25 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.13.0] - 2026-09-28
+
+### Added
+
+- Added mouse controls to the session picker, handoff board, session index, handoff review, and title wizard. Keyboard controls remain available.
+- Added `sessions.subagents.contextLimit` to compact subagent context above a configured token limit.
+
+### Changed
+
+- Subagents now can only use `submit_task_report` to report to their parent. `session_ask` now refuses running subagent sessions (`session_send_message` is the intended tool).
+- Raised the minimum supported Pi version to `0.87.1`. Older versions are no longer supported.
+
+### Fixed
+
+- Subagent instructions now occupy a named system-prompt section so other extensions can change the prompt without pi-sessions restoring an earlier version.
+- `session_search` now fills the requested result budget when some FTS matches are filtered out, while using less memory during indexing.
+- Auto-title now sends one-off model calls through Pi's authenticated model registry.
+- Fixed recovered subagent reports racing with child shutdown under Pi 0.87's deferred settled-turn handling.
+
 ## [0.12.1] - 2026-08-08
 
 ### Fixed

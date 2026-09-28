@@ -351,10 +351,10 @@ function createRuntime(ctx: {
     getAvailable(): Array<{ provider: string; id: string }>;
   };
 }) {
-  return createFakeModelRuntime({
+  return createFakeModelRegistry({
     all: ctx.modelRegistry.getAll(),
     available: ctx.modelRegistry.getAvailable(),
-    completeSimple: completeSimpleMock,
+    streamSimple: (...args) => ({ result: () => completeSimpleMock(...args) }),
   }) as never;
 }
 
@@ -428,7 +428,10 @@ function createRetitleContext(options: {
     cwd: "/repo/app",
     hasUI: options.hasUI ?? false,
     model: options.currentModel,
-    modelRegistry: createFakeModelRegistry({ available: options.availableModels }),
+    modelRegistry: createFakeModelRegistry({
+      available: options.availableModels,
+      streamSimple: (...args) => ({ result: () => completeSimpleMock(...args) }),
+    }),
     sessionManager: {
       getBranch() {
         return entries;

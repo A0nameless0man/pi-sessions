@@ -7,7 +7,7 @@ import {
   AUTO_TITLE_RUN_REQUEST_CUSTOM_TYPE,
 } from "../extensions/session-auto-title/runs.ts";
 import { getDefaultAutoTitleRunsDir } from "../extensions/shared/settings.ts";
-import { createFakeModelRuntime, createTestFilesystem } from "./test-helpers.ts";
+import { createFakeModelRegistry, createTestFilesystem } from "./test-helpers.ts";
 
 const testFs = createTestFilesystem("pi-sessions-auto-title-runs-");
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -43,7 +43,10 @@ function runEntries(): Array<Record<string, unknown>> {
 }
 
 function createRuntime(completeSimple: (...args: unknown[]) => Promise<unknown>) {
-  return createFakeModelRuntime({ all: [], available: [], completeSimple }) as never;
+  return createFakeModelRegistry({
+    available: [],
+    streamSimple: (...args) => ({ result: () => completeSimple(...args) }),
+  }) as never;
 }
 
 describe("auto-title run persistence", () => {

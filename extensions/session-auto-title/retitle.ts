@@ -3,7 +3,6 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-  ModelRuntime,
   SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -55,7 +54,6 @@ export async function runBulkRetitle(
   pi: ExtensionAPI,
   controller: SessionAutoTitleController,
   ctx: ExtensionCommandContext,
-  modelRuntime: ModelRuntime,
   model: Model<Api> | undefined,
   scan: RetitleScopeScan,
   mode: RetitleMode,
@@ -85,7 +83,6 @@ export async function runBulkRetitle(
         pi,
         controller,
         ctx,
-        modelRuntime,
         model,
         isManual: true,
         generation,
@@ -96,7 +93,7 @@ export async function runBulkRetitle(
       continue;
     }
 
-    const outcome = await retitleStoredSession(modelRuntime, model, session.path, generation);
+    const outcome = await retitleStoredSession(ctx.modelRegistry, model, session.path, generation);
     result[outcome] += 1;
   }
 
@@ -166,7 +163,6 @@ export interface RetitlePlanOptions {
   pi: ExtensionAPI;
   controller: SessionAutoTitleController;
   ctx: ExtensionContext;
-  modelRuntime: ModelRuntime;
   model: Model<Api> | undefined;
   isManual: boolean;
   generation: AutoTitleGeneration;
@@ -178,17 +174,8 @@ export interface RetitlePlanOptions {
 export async function runRetitlePlan(
   options: RetitlePlanOptions,
 ): Promise<AutoTitleGenerationResult> {
-  const {
-    pi,
-    controller,
-    ctx,
-    modelRuntime,
-    model,
-    isManual,
-    generation,
-    existingPlan,
-    getSessionEpoch,
-  } = options;
+  const { pi, controller, ctx, model, isManual, generation, existingPlan, getSessionEpoch } =
+    options;
   const notifyOnSuccess = options.notifyOnSuccess ?? isManual;
 
   const plan = existingPlan ?? controller.handleManualRetitle(ctx);
@@ -220,7 +207,7 @@ export async function runRetitlePlan(
     },
   );
   const generatedTitle = await generateAutoTitle(
-    modelRuntime,
+    ctx.modelRegistry,
     model,
     titleContext,
     plan.reason,
@@ -267,7 +254,7 @@ export function persistAutoTitleState(
 }
 
 async function retitleStoredSession(
-  modelRuntime: ModelRuntime,
+  modelRegistry: ExtensionContext["modelRegistry"],
   model: Model<Api>,
   sessionPath: string,
   generation: AutoTitleGeneration,
@@ -288,7 +275,7 @@ async function retitleStoredSession(
     currentTitle,
   };
   const generatedTitle = await generateAutoTitle(
-    modelRuntime,
+    modelRegistry,
     model,
     titleContext,
     plan.reason,

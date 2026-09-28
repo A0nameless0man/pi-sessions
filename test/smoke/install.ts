@@ -2,11 +2,13 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  type Context,
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
+  type JsonObject,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
+import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { contentToText } from "../../extensions/shared/text.ts";
@@ -14,7 +16,7 @@ import { parseTypeBoxValue } from "../../extensions/shared/typebox.ts";
 
 const TOOL_REQUEST = Type.Object({
   tool: Type.String(),
-  args: Type.Record(Type.String(), Type.Unknown()),
+  args: Type.Unsafe<JsonObject>({ type: "object", additionalProperties: true }),
 });
 
 export default function install(pi: ExtensionAPI): void {
@@ -25,14 +27,15 @@ export default function install(pi: ExtensionAPI): void {
     tokensPerSecond: 1_000_000,
   });
 
-  async function respond(context: Context) {
+  async function respond(context: TranscriptContext) {
     faux.appendResponses([respond]);
     const last = context.messages.at(-1);
+    const tools = getCurrentTools(context.messages);
     if (last?.role === "toolResult") {
       if (last.isError) throw new Error(`Smoke tool failed: ${contentToText(last.content)}`);
       return fauxAssistantMessage("SMOKE_TURN_DONE");
     }
-    if (context.tools?.some((tool) => tool.name === "create_handoff_context")) {
+    if (tools.some((tool) => tool.name === "create_handoff_context")) {
       return fauxAssistantMessage(
         fauxToolCall("create_handoff_context", {
           summary: "Credential-free smoke task. Report SMOKE_REPORT to the parent.",
@@ -40,7 +43,7 @@ export default function install(pi: ExtensionAPI): void {
         }),
       );
     }
-    if (context.tools?.some((tool) => tool.name === "submit_task_report")) {
+    if (tools.some((tool) => tool.name === "submit_task_report")) {
       const deadline = Date.now() + 30_000;
       while (!existsSync(join(getAgentDir(), "release-worker"))) {
         if (Date.now() > deadline) throw new Error("Smoke worker was never released.");
@@ -63,7 +66,11 @@ export default function install(pi: ExtensionAPI): void {
     ...faux.provider,
     auth: { apiKey: { name: "Smoke", resolve: async () => ({ auth: { apiKey: "smoke" } }) } },
   });
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
+    const model = ctx.modelRegistry.find("smoke", "scripted");
+    if (!model) throw new Error("Smoke provider model is not registered.");
+    await ctx.modelRegistry.refresh({ allowNetwork: false });
+    if (!(await pi.setModel(model))) throw new Error("Smoke provider auth is unavailable.");
     const sessionId = ctx.sessionManager.getSessionId();
     writeFileSync(
       join(getAgentDir(), `${sessionId}.ready.json`),
@@ -72,7 +79,6 @@ export default function install(pi: ExtensionAPI): void {
         sessionFile: ctx.sessionManager.getSessionFile(),
         cwd: ctx.cwd,
         pid: process.pid,
-        provider: ctx.model?.provider,
         agentDir: getAgentDir(),
         packageEntry: pi.getCommands().find((command) => command.name === "session-index")
           ?.sourceInfo.path,

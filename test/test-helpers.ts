@@ -46,6 +46,7 @@ interface FakeRegistryModel {
 export function createFakeModelRegistry(options: {
   available: FakeRegistryModel[];
   all?: FakeRegistryModel[];
+  streamSimple?: (...args: unknown[]) => { result: () => Promise<unknown> };
 }) {
   const all = options.all ?? options.available;
   const isAvailable = (model: FakeRegistryModel) =>
@@ -54,6 +55,7 @@ export function createFakeModelRegistry(options: {
   return {
     getAll: () => all,
     getAvailable: () => options.available,
+    streamSimple: options.streamSimple,
     hasConfiguredAuth: (model: FakeRegistryModel) => isAvailable(model),
     async getApiKeyAndHeaders() {
       return { ok: true, apiKey: "test-key", headers: undefined };

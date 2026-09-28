@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +29,15 @@ const testFs = createTestFilesystem("pi-sessions-subagent-install-");
 const childSessionFiles = new WeakMap<unknown[], { parentPath: string; childPath: string }>();
 const parentId = "12345678-1234-1234-1234-123456789abc";
 const childId = "87654321-1234-1234-1234-123456789abc";
+
+function createPromptEvent() {
+  return {
+    systemPrompt: "Old rendered prompt",
+    systemPromptOptions: {
+      sections: { other_extension: "Current instructions" } as Record<string, string>,
+    },
+  };
+}
 const grandchildId = "aaaaaaaa-1234-1234-1234-123456789abc";
 
 afterEach(() => {
@@ -304,9 +314,9 @@ describe("subagent installation", () => {
     await handlers.get("session_tree")?.({}, ctx);
     expect(handle.getParentSessionId()).toBeUndefined();
     expect(pi.getActiveTools()).not.toContain("submit_task_report");
-    expect(
-      await handlers.get("before_agent_start")?.({ systemPrompt: "Base" }, ctx),
-    ).toBeUndefined();
+    const event = createPromptEvent();
+    expect(await handlers.get("before_agent_start")?.(event, ctx)).toBeUndefined();
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).toBeUndefined();
     await expect(
       report.execute(
         "report-2",
@@ -394,22 +404,23 @@ describe("subagent installation", () => {
     expect(pi.exec).not.toHaveBeenCalled();
   });
 
-  it("recognizes a child from its pending bootstrap before handoff metadata exists", async () => {
+  it("adds a named section without freezing another extension's prompt", async () => {
     const { pi, handlers } = createPi({ tmuxInstalled: true });
     const handle = installSubagents(pi as never, createDeps(2));
     const ctx = createContext(childId, pendingChildEntries(1, true));
 
     await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
-    const result = await handlers.get("before_agent_start")?.({ systemPrompt: "Base prompt" }, ctx);
+    const event = createPromptEvent();
+    expect(await handlers.get("before_agent_start")?.(event, ctx)).toBeUndefined();
 
     expect(pi.registerTool).toHaveBeenCalledWith(
       expect.objectContaining({ name: "submit_task_report" }),
     );
-    expect(result).toEqual({
-      systemPrompt: expect.stringContaining(
-        "You are working as a subagent on one task delegated by a parent session.",
-      ),
-    });
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).toContain(
+      "You are working as a subagent on one task delegated by a parent session.",
+    );
+    expect(event.systemPromptOptions.sections.other_extension).toBe("Current instructions");
+    expect(event.systemPrompt).toBe("Old rendered prompt");
   });
 
   it("does not recognize a child from a cancelled bootstrap", async () => {
@@ -429,9 +440,9 @@ describe("subagent installation", () => {
     const ctx = createContext(childId, entries);
 
     await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
-    const result = await handlers.get("before_agent_start")?.({ systemPrompt: "Base prompt" }, ctx);
-
-    expect(result).toBeUndefined();
+    const event = createPromptEvent();
+    expect(await handlers.get("before_agent_start")?.(event, ctx)).toBeUndefined();
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).toBeUndefined();
     expect(pi.registerTool).not.toHaveBeenCalledWith(
       expect.objectContaining({ name: "submit_task_report" }),
     );
@@ -453,9 +464,9 @@ describe("subagent installation", () => {
     const ctx = createContext(childId, entries);
 
     await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
-    const result = await handlers.get("before_agent_start")?.({ systemPrompt: "Base prompt" }, ctx);
-
-    expect(result).toBeUndefined();
+    const event = createPromptEvent();
+    expect(await handlers.get("before_agent_start")?.(event, ctx)).toBeUndefined();
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).toBeUndefined();
     expect(pi.registerTool).not.toHaveBeenCalledWith(
       expect.objectContaining({ name: "submit_task_report" }),
     );
@@ -467,14 +478,15 @@ describe("subagent installation", () => {
     const ctx = createContext(childId, childEntries(1, false));
     await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
 
-    const result = await handlers.get("before_agent_start")?.({ systemPrompt: "Base prompt" }, ctx);
+    const event = createPromptEvent();
+    await handlers.get("before_agent_start")?.(event, ctx);
 
-    expect(result).toEqual({
-      systemPrompt: expect.stringContaining(
-        "You are working as a subagent on one task delegated by a parent session.",
-      ),
-    });
-    expect((result as { systemPrompt: string }).systemPrompt).not.toContain("submit_task_report");
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).toContain(
+      "You are working as a subagent on one task delegated by a parent session.",
+    );
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).not.toContain(
+      "submit_task_report",
+    );
   });
 
   it.each([
@@ -486,9 +498,9 @@ describe("subagent installation", () => {
     const ctx = createContext("11111111-1234-1234-1234-123456789abc", entries());
     await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
 
-    const result = await handlers.get("before_agent_start")?.({ systemPrompt: "Base prompt" }, ctx);
-
-    expect(result).toBeUndefined();
+    const event = createPromptEvent();
+    expect(await handlers.get("before_agent_start")?.(event, ctx)).toBeUndefined();
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).toBeUndefined();
     expect(pi.registerTool).not.toHaveBeenCalledWith(
       expect.objectContaining({ name: "submit_task_report" }),
     );
@@ -500,9 +512,12 @@ describe("subagent installation", () => {
     const ctx = createContext(childId, childEntries(1, true));
     await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
 
-    const result = await handlers.get("before_agent_start")?.({ systemPrompt: "Base prompt" }, ctx);
+    const event = createPromptEvent();
+    await handlers.get("before_agent_start")?.(event, ctx);
 
-    expect((result as { systemPrompt: string }).systemPrompt).not.toContain("submit_task_report");
+    expect(event.systemPromptOptions.sections.pi_sessions_subagent).not.toContain(
+      "submit_task_report",
+    );
   });
 
   it("compacts an over-limit child before settling it, and leaves the parent alone", async () => {
@@ -624,6 +639,137 @@ describe("subagent installation", () => {
       expect.anything(),
     );
     expect(ctx.shutdown).not.toHaveBeenCalled();
+  });
+
+  describe.each([
+    { boundary: "settled", reportCount: 1 },
+    { boundary: "settled", reportCount: 2 },
+    { boundary: "owned-subagent poll", reportCount: 1 },
+    { boundary: "owned-subagent poll", reportCount: 2 },
+  ])("$reportCount recovered reports during $boundary", ({ boundary, reportCount }) => {
+    it.each([
+      { name: "fire-and-forget", requestResponse: false, reported: false, reminded: false },
+      { name: "already reported", requestResponse: true, reported: true, reminded: false },
+      { name: "no report", requestResponse: true, reported: false, reminded: false },
+      { name: "already reminded", requestResponse: true, reported: false, reminded: true },
+    ])("lets a $name child process the recovered report before settling", async (scenario) => {
+      vi.useFakeTimers();
+      let grandchildRunning = boundary === "owned-subagent poll";
+      const entries = childEntriesWithGrandchild(scenario.requestResponse);
+      const launch = entries.at(-1) as { data: { childSessionFile: string } };
+      const { pi, handlers } = createPi({
+        tmuxInstalled: true,
+        ownedWindowSessionIds: () => (grandchildRunning ? [grandchildId] : []),
+      });
+      const deferred: Array<{
+        customType: string;
+        content: string;
+        display: boolean;
+        details: unknown;
+      }> = [];
+      pi.sendMessage.mockImplementation((message) => deferred.push(message));
+      pi.appendEntry.mockImplementation((customType, data) => {
+        entries.push({ type: "custom", id: `entry-${entries.length}`, customType, data });
+      });
+      const handle = installSubagents(pi as never, createDeps(2));
+      const ctx = createContext(childId, entries);
+      await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
+      await handlers.get("agent_start")?.({}, ctx);
+      if (scenario.reported) {
+        entries.push({
+          type: "custom",
+          customType: SUBAGENT_REPORT_CUSTOM_TYPE,
+          data: { reportId: "child-report-1", status: "done", summary: "Initial result." },
+        });
+      }
+      if (scenario.reminded) {
+        entries.push({
+          type: "custom_message",
+          customType: "pi-sessions.report_reminder_message",
+          content: "Submit a report.",
+          display: true,
+        });
+      }
+      if (grandchildRunning) {
+        await handlers.get("agent_settled")?.({}, ctx);
+      }
+      for (let index = 0; index < reportCount; index += 1) {
+        appendFileSync(
+          launch.data.childSessionFile,
+          `${JSON.stringify({
+            type: "custom",
+            id: `grandchild-report-${index}`,
+            parentId: index === 0 ? "grandchild-closed" : `grandchild-report-${index - 1}`,
+            timestamp: "2026-03-25T00:00:07.000Z",
+            customType: SUBAGENT_REPORT_CUSTOM_TYPE,
+            data: {
+              reportId: `grandchild-report-${index}`,
+              status: "done",
+              summary: "Recovered result.",
+            },
+          })}\n`,
+        );
+      }
+      grandchildRunning = false;
+
+      if (boundary === "owned-subagent poll") {
+        await vi.advanceTimersByTimeAsync(10_000);
+      } else {
+        await handlers.get("agent_settled")?.({}, ctx);
+      }
+
+      // Pi 0.87 leaves both checks unchanged until all settled handlers return.
+      expect(ctx.isIdle()).toBe(true);
+      expect(ctx.hasPendingMessages()).toBe(false);
+      expect(pi.sendMessage).toHaveBeenCalledTimes(reportCount);
+      for (let index = 0; index < reportCount; index += 1) {
+        expect(pi.sendMessage).toHaveBeenNthCalledWith(
+          index + 1,
+          expect.objectContaining({ customType: SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE }),
+          { triggerTurn: true },
+        );
+      }
+      expect(pi.appendEntry).not.toHaveBeenCalledWith(
+        "pi-sessions.subagent_closed",
+        expect.anything(),
+      );
+      expect(ctx.shutdown).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+
+      for (let index = 0; index < reportCount; index += 1) {
+        const recovered = deferred.shift();
+        expect(recovered?.customType).toBe(SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE);
+        ctx.isIdle = () => false;
+        await handlers.get("agent_start")?.({}, ctx);
+        await handlers.get("message_end")?.({ message: { role: "custom", ...recovered } }, ctx);
+        entries.push({ type: "custom_message", ...recovered });
+        if (scenario.requestResponse) {
+          entries.push({
+            type: "custom",
+            customType: SUBAGENT_REPORT_CUSTOM_TYPE,
+            data: {
+              reportId: `child-followup-${index}`,
+              status: "done",
+              summary: "Includes recovered result.",
+            },
+          });
+        }
+        ctx.isIdle = () => true;
+        await handlers.get("agent_settled")?.({}, ctx);
+        if (deferred.length > 0) {
+          expect(ctx.shutdown).not.toHaveBeenCalled();
+          expect(pi.appendEntry).not.toHaveBeenCalledWith(
+            "pi-sessions.subagent_closed",
+            expect.anything(),
+          );
+        }
+      }
+
+      expect(ctx.shutdown).toHaveBeenCalledOnce();
+      expect(pi.sendMessage).toHaveBeenCalledTimes(reportCount);
+      expect(deferred).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   it("kicks a waiting child once its owned subagent closes without a report", async () => {
@@ -874,7 +1020,7 @@ function cancelEntry() {
   };
 }
 
-function childEntriesWithGrandchild(): unknown[] {
+function childEntriesWithGrandchild(requestResponse = true): unknown[] {
   const root = testFs.createTempDir();
   const grandchildPath = testFs.writeJsonlFile(root, "grandchild.jsonl", [
     {
@@ -892,7 +1038,7 @@ function childEntriesWithGrandchild(): unknown[] {
       data: { reason: "no_report_after_reminder" },
     },
   ]);
-  const entries = childEntries(1, true);
+  const entries = childEntries(1, requestResponse);
   entries.push({
     type: "custom",
     id: "grandchild-launch",

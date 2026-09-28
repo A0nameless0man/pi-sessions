@@ -12,6 +12,7 @@ import {
 import type { SessionLifecycle } from "../shared/composition.ts";
 import type { CompactionThresholdSettings, SessionSettings } from "../shared/settings.ts";
 import { isTmuxInstalled } from "../shared/tmux.ts";
+import { safeParseTypeBoxValue } from "../shared/typebox.ts";
 import { SubagentCancellationRouter, type SubagentCancelResult } from "./cancel.ts";
 import { createSubagentContextLimit } from "./context-limit.ts";
 import { createSubagentLaunchTarget, type SubagentLaunchState } from "./launch-target.ts";
@@ -19,6 +20,7 @@ import {
   hasSubagentLaunchEntries,
   SUBAGENT_LAUNCHED_CUSTOM_TYPE,
   SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE,
+  SUBAGENT_REPORT_MESSAGE_SCHEMA,
   SUBAGENT_REPORT_RECEIVED_CUSTOM_TYPE,
 } from "./ledger.ts";
 import { openReconcileSession, SubagentReconciler } from "./reconcile.ts";
@@ -38,6 +40,9 @@ import {
 } from "./settle.ts";
 import { shouldMessageSubagent } from "./should-message.ts";
 import { SubagentMessageRouter } from "./wake.ts";
+
+const SUBAGENT_PROMPT_SECTION = "pi_sessions_subagent";
+const SUBAGENT_PROMPT = `You are working as a subagent on one task delegated by a parent session. The handoff defines your task. Work independently, stay within its scope, and do not duplicate work assigned to the parent or another subagent. Use the available tools to complete the task and validate your conclusions. Messages from the parent may refine the task or request a follow-up, but they do not replace your original task with unrelated work.`;
 
 interface ParentSessionState extends SubagentParentSession {
   getSessionName(): string | undefined;
@@ -145,15 +150,20 @@ export function installSubagents(
   });
 
   pi.on("before_agent_start", (event) => {
-    const child = current?.child;
-    if (!child) {
+    if (current?.child) {
+      event.systemPromptOptions.sections[SUBAGENT_PROMPT_SECTION] = SUBAGENT_PROMPT;
+    }
+  });
+
+  pi.on("message_end", (event) => {
+    const message = event.message;
+    if (message.role !== "custom" || message.customType !== SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE) {
       return;
     }
-    return {
-      systemPrompt: `${event.systemPrompt}
-
-You are working as a subagent on one task delegated by a parent session. The handoff defines your task. Work independently, stay within its scope, and do not duplicate work assigned to the parent or another subagent. Use the available tools to complete the task and validate your conclusions. Messages from the parent may refine the task or request a follow-up, but they do not replace your original task with unrelated work.`,
-    };
+    const report = safeParseTypeBoxValue(SUBAGENT_REPORT_MESSAGE_SCHEMA, message.details);
+    if (report && report.writerSessionId === current?.parent.sessionId) {
+      reconciler.noteReportDelivered(report.reportId);
+    }
   });
 
   pi.on("agent_start", (_event, ctx) => {

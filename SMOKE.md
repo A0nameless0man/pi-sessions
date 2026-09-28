@@ -318,7 +318,7 @@ Run `/handoff` and confirm the **Subagents** tab shows the right derived state f
 
 ## 12. Verify fullscreen mouse input
 
-Use Pi `0.85.0` or newer with `"tuiMode": "fullscreen"` in its settings.
+Use Pi `0.87.1` or newer with `"tuiMode": "fullscreen"` in its settings.
 
 - Open `Alt+O`, type a query with enough results to scroll, and click a session near the bottom of the list. The inserted ID must belong to the pressed session even if pressing it scrolls another session into that row. Click the filter to place its cursor; drag across its text to select it for the clipboard.
 - Open `/handoff`, click both tab labels and several rows, and use the wheel. Hover must not change selection. Click `x stop` on a disposable worker, then `esc cancel`. The worker must keep running; stopping it requires a separate click on `x confirm`.

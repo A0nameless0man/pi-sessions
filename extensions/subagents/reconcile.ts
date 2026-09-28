@@ -85,6 +85,7 @@ export class SubagentReconciler {
   private registered: { epoch: number; sessionIds: Set<string> } | undefined;
   private latestResult: ReconcileResult = emptyReconcileResult();
   private sentReportIds = new Set<string>();
+  private pendingRecoveredReportIds = new Set<string>();
 
   constructor(private readonly deps: ReconcileDependencies) {}
 
@@ -95,6 +96,7 @@ export class SubagentReconciler {
     this.registered = undefined;
     this.latestResult = emptyReconcileResult();
     this.sentReportIds.clear();
+    this.pendingRecoveredReportIds.clear();
   }
 
   hasSentReport(reportId: string): boolean {
@@ -104,6 +106,14 @@ export class SubagentReconciler {
   noteReportSent(reportId: string): void {
     // Pi may queue the message before persisting it. The ledger alone cannot deduplicate it yet.
     this.sentReportIds.add(reportId);
+  }
+
+  hasPendingRecoveredReports(): boolean {
+    return this.pendingRecoveredReportIds.size > 0;
+  }
+
+  noteReportDelivered(reportId: string): void {
+    this.pendingRecoveredReportIds.delete(reportId);
   }
 
   reconcile(): Promise<ReconcileResult> {
@@ -357,13 +367,35 @@ export class SubagentReconciler {
       ...report,
       provenance: "recovered",
     };
-    this.sendMessage(parent, {
-      customType: SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE,
-      content: formatReportForModel(launch.title, message),
-      display: true,
-      details: message,
-    });
+    this.requireCurrent(parent);
+    const delivery = parent.isIdle()
+      ? { triggerTurn: true as const }
+      : { deliverAs: "steer" as const };
+    this.pendingRecoveredReportIds.add(report.reportId);
+    try {
+      this.deps.executor.sendMessage(
+        {
+          customType: SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE,
+          content: formatReportForModel(launch.title, message),
+          display: true,
+          details: message,
+        },
+        delivery,
+      );
+    } catch (error) {
+      this.pendingRecoveredReportIds.delete(report.reportId);
+      throw error;
+    }
     this.noteReportSent(report.reportId);
+    // Non-streaming steering appends directly, without an extension message_end event.
+    if (
+      "deliverAs" in delivery &&
+      collectParentLedger(parent.getBranch(), parent.sessionId).deliveredReportIds.has(
+        report.reportId,
+      )
+    ) {
+      this.noteReportDelivered(report.reportId);
+    }
   }
 
   private sendDisownedMessage(parent: ReconcileParentSession): void {
@@ -375,17 +407,6 @@ export class SubagentReconciler {
       display: true,
       details: { writerSessionId: parent.sessionId },
     });
-  }
-
-  private sendMessage(
-    parent: ReconcileParentSession,
-    message: { customType: string; content: string; display: boolean; details: unknown },
-  ): void {
-    this.requireCurrent(parent);
-    const delivery = parent.isIdle()
-      ? { triggerTurn: true as const }
-      : { deliverAs: "steer" as const };
-    this.deps.executor.sendMessage(message, delivery);
   }
 
   private requireCurrent(parent: ReconcileParentSession): void {

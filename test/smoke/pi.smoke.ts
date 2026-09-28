@@ -38,7 +38,6 @@ const READY = Type.Object({
   sessionFile: Type.String(),
   cwd: Type.String(),
   pid: Type.Number(),
-  provider: Type.Literal("smoke"),
   agentDir: Type.String(),
   packageEntry: Type.String(),
   tools: Type.Array(Type.String()),

@@ -41,8 +41,84 @@ describe("subagent reconciliation", () => {
     });
     await fixture.reconciler.reconcile();
     await fixture.reconciler.reconcile();
+
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(true);
     expect(fixture.sent).toHaveLength(1);
     expect(fixture.appended).toHaveLength(1);
+
+    fixture.reconciler.noteReportDelivered("unrelated-report");
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(true);
+    fixture.reconciler.noteReportDelivered("report-1");
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+    await fixture.reconciler.reconcile();
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+  });
+
+  it("does not resurrect pending recovery after rewinding a delivered report", async () => {
+    const fixture = createFixture([launchEntry()], [reportEntry()]);
+    await fixture.reconciler.reconcile();
+    fixture.reconciler.noteReportDelivered("report-1");
+    fixture.branch.splice(0, fixture.branch.length, launchEntry());
+
+    await fixture.reconciler.reconcile();
+
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+    expect(fixture.sent).toHaveLength(1);
+  });
+
+  it("observes append-only steering without an extension delivery event", async () => {
+    const fixture = createFixture(
+      [launchEntry()],
+      [reportEntry()],
+      false,
+      async () => [],
+      false,
+      true,
+      false,
+    );
+
+    await fixture.reconciler.reconcile();
+
+    expect(fixture.sent[0]).toMatchObject({ options: { deliverAs: "steer" } });
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+    fixture.branch.splice(0, fixture.branch.length, launchEntry());
+    await fixture.reconciler.reconcile();
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+    expect(fixture.sent).toHaveLength(1);
+  });
+
+  it("clears pending recovery when a new session begins", async () => {
+    const fixture = createFixture([launchEntry()], [reportEntry()]);
+    await fixture.reconciler.reconcile();
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(true);
+
+    fixture.reconciler.beginSession();
+
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+  });
+
+  it("tracks delivery even when Pi emits it synchronously from sendMessage", async () => {
+    const fixture = createFixture([launchEntry()], [reportEntry()]);
+    fixture.deliver.mockImplementation(() => {
+      expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(true);
+      fixture.reconciler.noteReportDelivered("report-1");
+    });
+
+    await fixture.reconciler.reconcile();
+
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+  });
+
+  it("does not leave failed dispatch pending or deduplicated", async () => {
+    const fixture = createFixture([launchEntry()], [reportEntry()]);
+    fixture.deliver.mockImplementation(() => {
+      throw new Error("dispatch failed");
+    });
+
+    await expect(fixture.reconciler.reconcile()).rejects.toThrow("dispatch failed");
+
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
+    expect(fixture.reconciler.hasSentReport("report-1")).toBe(false);
   });
 
   it("does not recover a report delivered live while presence was being read", async () => {
@@ -319,10 +395,10 @@ describe("subagent reconciliation", () => {
     expect(reset.registered).not.toContain(childId);
   });
 
-  it("coalesces concurrent triggers and performs one dirty follow-up", async () => {
+  it("preserves pending recovery across coalesced reconciliation passes", async () => {
     let release: (() => void) | undefined;
     let calls = 0;
-    const fixture = createFixture([], [], false, async () => {
+    const fixture = createFixture([launchEntry()], [reportEntry()], false, async () => {
       calls += 1;
       if (calls === 1) {
         await new Promise<void>((resolve) => {
@@ -340,6 +416,10 @@ describe("subagent reconciliation", () => {
     await first;
 
     expect(calls).toBe(2);
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(true);
+    expect(fixture.sent).toHaveLength(1);
+    fixture.reconciler.noteReportDelivered("report-1");
+    expect(fixture.reconciler.hasPendingRecoveredReports()).toBe(false);
   });
 
   it("writes one fork disownment message", async () => {
@@ -447,6 +527,7 @@ function createFixture(
   });
   return {
     reconciler,
+    branch,
     append: (customType: string, data: unknown) => executor.appendEntry(customType, data),
     deliver: executor.sendMessage,
     appended,

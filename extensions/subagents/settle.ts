@@ -56,12 +56,17 @@ export function createSettledChildLifecycle(
     cancel,
     async settle(parent, child, reconciliation) {
       cancel();
+      // Pi defers report turns sent during agent_settled without changing idle or pending state.
+      if (reconciler.hasPendingRecoveredReports()) {
+        return;
+      }
       const currentGeneration = generation;
       let phase: "owned-subagents" | "settle" | "observer" =
         reconciliation && hasRunningOwnedSubagents(reconciliation) ? "owned-subagents" : "settle";
       const canAdvance = (): boolean =>
         generation === currentGeneration &&
         isCurrentSession(parent.epoch) &&
+        !reconciler.hasPendingRecoveredReports() &&
         !parent.hasPendingMessages() &&
         parent.isIdle();
       const schedule = (delayMs: number): void => {
