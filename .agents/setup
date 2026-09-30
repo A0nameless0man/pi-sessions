@@ -47,7 +47,7 @@ EOF
 
 install_toolchain() {
   mise trust --yes "${repo_root}/mise.toml"
-  mise install --yes --jobs 8
+  mise install --yes --jobs 8 --include-task-tools
 }
 
 install_dependencies() {
