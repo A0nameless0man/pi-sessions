@@ -8,9 +8,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import stripAnsi from "strip-ansi";
+import { Value } from "typebox/value";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { listSessionPickerItems } from "../extensions/session-handoff/query.ts";
 import { installSearch } from "../extensions/session-search/install.ts";
+import { SESSION_SEARCH_OUTPUT_SCHEMA } from "../extensions/session-search/tool-contract.ts";
 import {
   SEARCH_SNIPPET_MATCH_END,
   SEARCH_SNIPPET_MATCH_START,
@@ -126,6 +128,15 @@ describe("session_search tool", () => {
       { sessionId: "session-2", cwd: "/repo/app" },
       { sessionId: "session-1", cwd: "/repo/app" },
     ]);
+    expect(tool.outputSchema).toBe(SESSION_SEARCH_OUTPUT_SCHEMA);
+    expect(Value.Check(SESSION_SEARCH_OUTPUT_SCHEMA, result.structuredContent)).toBe(true);
+    expect(result.structuredContent).toEqual({
+      results: [
+        expect.objectContaining({ sessionId: "session-2", sessionName: "Second title" }),
+        expect.objectContaining({ sessionId: "session-1" }),
+      ],
+    });
+    expect(tool.annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
 
     const component = new ToolExecutionComponent(
       tool.name,

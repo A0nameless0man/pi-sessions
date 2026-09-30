@@ -7,6 +7,7 @@ import {
 import { validateSplitHandoffPrerequisites } from "../extensions/session-handoff/launch/resolution.ts";
 
 import { buildPiResumeCommand } from "../extensions/session-handoff/spawn.ts";
+import { createFakeExtensionApi } from "./test-helpers.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -176,39 +177,12 @@ function resumeCommand(sessionId: string): string {
 
 function createPiApi(result?: { code?: number; stdout?: string; stderr?: string }): ExtensionAPI {
   return {
-    on: vi.fn(),
-    registerTool: vi.fn(),
-    registerCommand: vi.fn(),
-    registerShortcut: vi.fn(),
-    registerFlag: vi.fn(),
-    getFlag: vi.fn(),
-    registerMessageRenderer: vi.fn(),
-    registerMarkdownTransformer: vi.fn(),
-    registerEntryRenderer: vi.fn(),
-    sendMessage: vi.fn(),
-    sendUserMessage: vi.fn(),
-    appendEntry: vi.fn(),
-    setSessionName: vi.fn(),
-    getSessionName: vi.fn(),
-    setLabel: vi.fn(),
+    ...createFakeExtensionApi(),
     exec: vi.fn().mockResolvedValue({
       stdout: result?.stdout ?? "",
       stderr: result?.stderr ?? "",
       code: result?.code ?? 0,
       killed: false,
     }),
-    getActiveTools: vi.fn(),
-    getAllTools: vi.fn(),
-    setActiveTools: vi.fn(),
-    getCommands: vi.fn(),
-    setModel: vi.fn(),
-    getThinkingLevel: vi.fn(),
-    setThinkingLevel: vi.fn(),
-    registerProvider: vi.fn(),
-    unregisterProvider: vi.fn(),
-    events: {
-      emit: vi.fn(),
-      on: vi.fn().mockReturnValue(() => {}),
-    },
   };
 }

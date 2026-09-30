@@ -535,10 +535,12 @@ describe("session picker mouse", () => {
     });
   });
 
-  it("moves one item per wheel event only over the list and keeps navigation clamped", () => {
+  it("moves by the wheel delta only over the list and keeps navigation clamped", () => {
     const { picker } = setup();
     const row = picker.render(120).findIndex((line) => line.includes("Parent session"));
     picker.handleMouse({ ...mouse("wheel", 5, row), wheelDelta: 3 });
+    expect(picker.render(120).find((line) => line.includes("›"))).toContain("Grandchild session");
+    picker.handleMouse({ ...mouse("wheel", 5, row), wheelDelta: -2 });
     expect(picker.render(120).find((line) => line.includes("›"))).toContain("Current session");
     expect(picker.handleMouse({ ...mouse("wheel", 5, 1), wheelDelta: 3 })).toBeUndefined();
     picker.handleInput("\u001b[5~");

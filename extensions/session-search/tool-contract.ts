@@ -1,8 +1,11 @@
-import type {
-  SearchSessionResult,
-  SearchSort,
-  SessionIndexStatus,
-  SessionKind,
+import { type Static, Type } from "typebox";
+import {
+  SESSION_LINEAGE_RELATION_SCHEMA,
+  SESSION_ORIGIN_SCHEMA,
+  type SearchSessionResult,
+  type SearchSort,
+  type SessionIndexStatus,
+  type SessionKind,
 } from "../shared/session-index/index.ts";
 
 export interface SessionSearchToolParams {
@@ -29,3 +32,23 @@ export interface SessionSearchToolDetails {
   results: SessionSearchResult[];
   status?: SessionIndexStatus | undefined;
 }
+
+export const SESSION_SEARCH_OUTPUT_SCHEMA = Type.Object({
+  results: Type.Array(
+    Type.Object({
+      sessionId: Type.String(),
+      sessionName: Type.String(),
+      cwd: Type.String(),
+      startedAt: Type.String(),
+      modifiedAt: Type.String(),
+      messageCount: Type.Number(),
+      snippet: Type.String(),
+      hitCount: Type.Number(),
+      sessionOrigin: Type.Optional(SESSION_ORIGIN_SCHEMA),
+      relation: Type.Optional(SESSION_LINEAGE_RELATION_SCHEMA),
+      parentSessionId: Type.Optional(Type.String()),
+    }),
+  ),
+});
+
+export type SessionSearchOutput = Static<typeof SESSION_SEARCH_OUTPUT_SCHEMA>;

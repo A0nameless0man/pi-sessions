@@ -178,7 +178,7 @@ export class SessionReferencePickerComponent implements Focusable {
       return undefined;
     }
     if (event.type === "wheel" && event.wheelDelta && this.sessionAt(event)) {
-      this.moveSelection(event.wheelDelta < 0 ? -1 : 1);
+      this.moveSelection(event.wheelDelta);
       return { handled: true };
     }
     if (event.type !== "click" || event.button !== "left") return undefined;

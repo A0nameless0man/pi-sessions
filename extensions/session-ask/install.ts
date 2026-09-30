@@ -12,10 +12,12 @@ import { isExactSessionId } from "../shared/session-ui.ts";
 import type { SessionSettings } from "../shared/settings.ts";
 import { runSessionAskAgent } from "./agent.ts";
 import { renderSessionAskResult } from "./renderer.ts";
-import type {
-  SessionAskProgressDetails,
-  SessionAskRelevantFile,
-  SessionAskResultDetails,
+import {
+  SESSION_ASK_OUTPUT_SCHEMA,
+  type SessionAskOutput,
+  type SessionAskProgressDetails,
+  type SessionAskRelevantFile,
+  type SessionAskResultDetails,
 } from "./tool-contract.ts";
 
 interface SessionAskToolParams {
@@ -39,6 +41,7 @@ export function installAsk(
     name: "session_ask",
     label: "Session Ask",
     description: "Interrogate a Pi session transcript",
+    annotations: { readOnlyHint: true, openWorldHint: false },
     promptSnippet: "Recall information, decisions, or reasoning from a Pi session by id",
     promptGuidelines: [
       "Use session_ask with focused questions rather than broad recap requests.",
@@ -56,6 +59,7 @@ export function installAsk(
         description: "What to find in that session's transcript",
       }),
     }),
+    outputSchema: SESSION_ASK_OUTPUT_SCHEMA,
     async execute(_toolCallId, params: SessionAskToolParams, signal, onUpdate, ctx) {
       const sessionId = params.session.trim();
       if (!sessionId) {
@@ -110,6 +114,7 @@ export function installAsk(
             },
           ],
           details,
+          structuredContent: formatSessionAskOutput(details),
         };
       }
 
@@ -179,6 +184,7 @@ export function installAsk(
           },
         ],
         details,
+        structuredContent: formatSessionAskOutput(details),
       };
     },
     renderResult: renderSessionAskResult,
@@ -215,6 +221,15 @@ function resolveSessionAskTarget(
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function formatSessionAskOutput(details: SessionAskResultDetails): SessionAskOutput {
+  return {
+    sessionId: details.sessionId,
+    sessionName: details.sessionName,
+    answer: details.answer,
+    relevantFiles: details.relevantFiles,
+  };
 }
 
 function formatSessionAskHeader(sessionId: string, sessionName: string, question: string): string {

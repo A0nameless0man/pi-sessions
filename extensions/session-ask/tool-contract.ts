@@ -22,6 +22,14 @@ export const SESSION_ASK_RESULT_DETAILS_SCHEMA = Type.Object({
   sessionPath: Type.String({ minLength: 1 }),
 });
 
+export const SESSION_ASK_OUTPUT_SCHEMA = Type.Object({
+  sessionId: Type.String(),
+  sessionName: Type.String(),
+  answer: Type.String(),
+  relevantFiles: Type.Array(SESSION_ASK_RELEVANT_FILE_SCHEMA),
+});
+
 export type SessionAskRelevantFile = Static<typeof SESSION_ASK_RELEVANT_FILE_SCHEMA>;
 export type SessionAskProgressDetails = Static<typeof SESSION_ASK_PROGRESS_DETAILS_SCHEMA>;
 export type SessionAskResultDetails = Static<typeof SESSION_ASK_RESULT_DETAILS_SCHEMA>;
+export type SessionAskOutput = Static<typeof SESSION_ASK_OUTPUT_SCHEMA>;

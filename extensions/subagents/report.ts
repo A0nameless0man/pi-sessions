@@ -43,6 +43,7 @@ export function createSubmitTaskReportTool(
     label: "Submit task report",
     description:
       "Send a report to the parent session and end the current turn. Use it when the delegated task or requested follow-up is done, blocked, or cannot be completed.",
+    exposure: "model-only",
     promptSnippet: "Submit the current task report to the parent session and end the turn",
     promptGuidelines: [
       "Call submit_task_report exactly once as the final tool call for every delegated task or follow-up that expects a response.",

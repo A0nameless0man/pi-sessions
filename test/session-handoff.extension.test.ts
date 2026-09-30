@@ -232,6 +232,7 @@ describe("session handoff extension", () => {
     const definition = registerTool.mock.calls.at(-1)?.[0];
     expect(launchValues(definition)).toEqual(["left", "right", "up", "down", "deferred"]);
     expect(launchDescription(definition)).toContain("direction values open a Ghostty split");
+    expect(definition.exposure).toBe("model-only");
   });
 
   it("describes tmux when tmux is the selected split backend", async () => {

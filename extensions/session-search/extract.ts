@@ -633,11 +633,17 @@ function extractMessageFileTouches(
   message: AgentMessage,
   cwd: string,
 ): SessionFileTouch[] {
-  if (message.role !== "assistant" || !Array.isArray(message.content)) {
+  let toolCalls: { name: string; arguments?: Record<string, unknown> | undefined }[];
+  if (message.role === "assistant" && Array.isArray(message.content)) {
+    toolCalls = message.content.filter(isToolCallBlock);
+  } else if (message.role === "toolResult" && message.nestedCalls) {
+    // Calls made through ctx.executeTool(), e.g. from a codemode script, only appear here.
+    toolCalls = message.nestedCalls.calls;
+  } else {
     return [];
   }
 
-  return message.content.filter(isToolCallBlock).flatMap((toolCall) => {
+  return toolCalls.flatMap((toolCall) => {
     const rawPath = stringValue(toolCall.arguments?.path);
     const op = getToolCallFileTouchOp(toolCall.name);
     if (!rawPath || !op) {

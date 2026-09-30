@@ -10,10 +10,12 @@ import {
 } from "../shared/session-index/index.ts";
 import type { SessionSettings } from "../shared/settings.ts";
 import { renderSessionSearchResult } from "./renderer.ts";
-import type {
-  SessionSearchResult,
-  SessionSearchToolDetails,
-  SessionSearchToolParams,
+import {
+  SESSION_SEARCH_OUTPUT_SCHEMA,
+  type SessionSearchOutput,
+  type SessionSearchResult,
+  type SessionSearchToolDetails,
+  type SessionSearchToolParams,
 } from "./tool-contract.ts";
 
 const DEFAULT_SESSION_SEARCH_LIMIT = 6;
@@ -30,6 +32,7 @@ export function installSearch(pi: ExtensionAPI, deps: SearchInstallDeps): void {
     name: "session_search",
     label: "Session Search",
     description: "Search Pi sessions",
+    annotations: { readOnlyHint: true, openWorldHint: false },
     promptSnippet: "Locate Pi sessions for follow-up",
     promptGuidelines: [
       "Omit queries in session_search to list matching sessions chronologically.",
@@ -104,6 +107,7 @@ export function installSearch(pi: ExtensionAPI, deps: SearchInstallDeps): void {
         }),
       ),
     }),
+    outputSchema: SESSION_SEARCH_OUTPUT_SCHEMA,
     async execute(_toolCallId, params: SessionSearchToolParams, _signal, onUpdate, ctx) {
       const validationError = validateSearchParams(params);
       if (validationError) {
@@ -130,6 +134,7 @@ export function installSearch(pi: ExtensionAPI, deps: SearchInstallDeps): void {
             },
           ],
           details,
+          structuredContent: formatSearchOutput(results),
         };
       });
     },
@@ -168,6 +173,24 @@ function formatSearchResultsForModel(details: SessionSearchToolDetails): string 
     null,
     2,
   );
+}
+
+function formatSearchOutput(results: SessionSearchResult[]): SessionSearchOutput {
+  return {
+    results: results.map((result) => ({
+      sessionId: result.sessionId,
+      sessionName: result.sessionName,
+      cwd: result.cwd,
+      startedAt: result.startedAt,
+      modifiedAt: result.modifiedAt,
+      messageCount: result.messageCount,
+      snippet: stripSearchSnippetMarkers(result.snippet) ?? result.snippet,
+      hitCount: result.hitCount,
+      ...(result.sessionOrigin ? { sessionOrigin: result.sessionOrigin } : {}),
+      ...(result.relation ? { relation: result.relation } : {}),
+      ...(result.parentSessionId ? { parentSessionId: result.parentSessionId } : {}),
+    })),
+  };
 }
 
 function formatSearchResultForModel(result: SessionSearchResult): SessionSearchResult {

@@ -31,7 +31,7 @@ function createMessagingHandle(
 }
 
 describe("subagent reports", () => {
-  it("carries a single prompt guideline", () => {
+  it("carries a single prompt guideline and stays out of codemode scripts", () => {
     const tool = createSubmitTaskReportTool(
       createFakeExtensionApi(),
       createMessagingHandle(async () => ({ delivered: true })),
@@ -41,6 +41,7 @@ describe("subagent reports", () => {
     expect(tool.promptGuidelines).toEqual([
       "Call submit_task_report exactly once as the final tool call for every delegated task or follow-up that expects a response.",
     ]);
+    expect(tool.exposure).toBe("model-only");
   });
 
   it("writes the child report before attempting broker delivery and terminates the turn", async () => {

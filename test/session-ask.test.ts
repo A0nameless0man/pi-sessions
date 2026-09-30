@@ -1,8 +1,10 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ExtensionAPI, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Value } from "typebox/value";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installAsk } from "../extensions/session-ask/install.ts";
+import { SESSION_ASK_OUTPUT_SCHEMA } from "../extensions/session-ask/tool-contract.ts";
 import {
   createChildGeneratedHandoffBootstrap,
   HANDOFF_BOOTSTRAP_PENDING_CUSTOM_TYPE,
@@ -316,6 +318,14 @@ describe("session_ask tool", () => {
       sessionPath,
     });
     expect((result.content[0] as { text: string }).text).toContain("Resolved by exact id.");
+    expect(tool.outputSchema).toBe(SESSION_ASK_OUTPUT_SCHEMA);
+    expect(Value.Check(SESSION_ASK_OUTPUT_SCHEMA, result.structuredContent)).toBe(true);
+    expect(result.structuredContent).toEqual({
+      sessionId,
+      sessionName: "",
+      answer: "Resolved by exact id.",
+      relevantFiles: [],
+    });
   });
 
   it("redirects to session_send_message when the target is your own subagent", async () => {
@@ -464,6 +474,8 @@ describe("session_ask tool", () => {
       sessionPath,
       question: "What happened?",
     });
+    expect(tool.outputSchema).toBe(SESSION_ASK_OUTPUT_SCHEMA);
+    expect(Value.Check(SESSION_ASK_OUTPUT_SCHEMA, result.structuredContent)).toBe(true);
   });
 
   it("includes session metadata and question in updates and final output", async () => {

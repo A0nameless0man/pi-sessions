@@ -511,8 +511,7 @@ describe("handoff board mouse", () => {
     expect(board.render(86).find((line) => line.includes("Second worker"))).toContain("›");
     board.handleMouse(mouse("wheel", point, { wheelDelta: 1 }));
     expect(board.render(86).find((line) => line.includes("Second worker"))).toContain("›");
-    board.handleMouse(mouse("wheel", point, { wheelDelta: -1 }));
-    board.handleMouse(mouse("wheel", point, { wheelDelta: -1 }));
+    board.handleMouse(mouse("wheel", point, { wheelDelta: -3 }));
     expect(board.render(86).find((line) => line.includes("First worker"))).toContain("›");
   });
 

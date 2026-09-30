@@ -203,7 +203,7 @@ export class HandoffBoard implements Focusable {
       return { handled: true };
     }
     if (event.type === "wheel" && event.wheelDelta && this.rowHitAt(event)) {
-      if (!this.busy) this.moveSelection(Math.sign(event.wheelDelta));
+      if (!this.busy) this.moveSelection(event.wheelDelta);
       return { handled: true };
     }
     return undefined;

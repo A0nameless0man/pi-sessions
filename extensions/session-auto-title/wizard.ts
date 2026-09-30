@@ -165,10 +165,7 @@ class RetitleWizardPanel implements Focusable {
     }
     if (result) return result;
     if (event.type === "wheel" && this.step.kind === "scope" && event.wheelDelta) {
-      this.selectedIndex = Math.max(
-        0,
-        Math.min(2, this.selectedIndex + Math.sign(event.wheelDelta)),
-      );
+      this.selectedIndex = Math.max(0, Math.min(2, this.selectedIndex + event.wheelDelta));
       this.requestRender();
       return { handled: true };
     }

@@ -135,8 +135,10 @@ describe("retitle wizard mouse", () => {
     const folder = find(panel, "Generate titles for all sessions in this folder");
     panel.handleMouse?.(mouse("move", folder.x, folder.y));
     expect(panel.render(100)[y]).toContain("› t");
-    panel.handleMouse?.(mouse("wheel", folder.x, folder.y, 3));
+    panel.handleMouse?.(mouse("wheel", folder.x, folder.y, 1));
     expect(panel.render(100)[folder.y]).toContain("› f");
+    panel.handleMouse?.(mouse("wheel", folder.x, folder.y, -3));
+    expect(panel.render(100)[y]).toContain("› t");
   });
 
   it("highlights action text until release and retains its callback through rerender", async () => {

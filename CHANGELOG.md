@@ -2,6 +2,22 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.14.0] - 2026-09-30
+
+### Added
+
+- `session_search`, `session_ask`, and `session_reachable` now declare an `outputSchema` and return `structuredContent`, so codemode scripts receive typed data instead of text.
+
+### Changed
+
+- Raised the minimum supported Pi version to `0.99.1`. Older versions are no longer supported.
+- `session_handoff` and `submit_task_report` are `model-only`; codemode scripts cannot call them.
+
+### Fixed
+
+- Session indexing now records file touches from tools called inside other tools, such as codemode scripts.
+- Mouse-wheel navigation in the session picker, handoff board, and title wizard now follows Pi's `fullscreenWheelScrollLines` setting.
+
 ## [0.13.1] - 2026-09-28
 
 ### Fixed

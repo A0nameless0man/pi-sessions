@@ -68,6 +68,8 @@ export function installHandoff(
       name: "session_handoff",
       label: "Session Handoff",
       description: "Start a new Pi session with a self-contained task.",
+      // Nested calls write no toolResult entry, so the board would never see the launch receipt.
+      exposure: "model-only",
       promptSnippet:
         "Delegate bounded work to a background subagent or hand off context to another Pi session",
       promptGuidelines: buildHandoffPromptGuidelines(launchTargets, models, roster),

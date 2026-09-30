@@ -2,11 +2,13 @@ import path from "node:path";
 import { initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import stripAnsi from "strip-ansi";
+import { Value } from "typebox/value";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   createChildGeneratedHandoffBootstrap,
   HANDOFF_BOOTSTRAP_PENDING_CUSTOM_TYPE,
 } from "../extensions/session-handoff/metadata.ts";
+import { SESSION_REACHABLE_TOOL_DETAILS_SCHEMA } from "../extensions/session-messaging/pi/reachable-contract.ts";
 import {
   createSessionReachableTool,
   type ReachableSubagentEntry,
@@ -166,6 +168,9 @@ describe("session_reachable tool", () => {
     };
 
     expect(listSubagents).toHaveBeenCalledWith("branch");
+    expect(tool.outputSchema).toBe(SESSION_REACHABLE_TOOL_DETAILS_SCHEMA);
+    expect(Value.Check(SESSION_REACHABLE_TOOL_DETAILS_SCHEMA, result.structuredContent)).toBe(true);
+    expect(result.structuredContent).toEqual(result.details);
     expect(details.scope).toBe("branch");
     expect(details.sessions).toEqual([
       expect.objectContaining({

@@ -77,6 +77,7 @@ export function createSessionReachableTool(deps: SessionReachableDeps): ToolDefi
       "Before session_send_message, use session_reachable to find the target session id.",
     ],
     parameters: subagentsAvailable ? SESSION_REACHABLE_PARAMS : SESSION_REACHABLE_USER_PARAMS,
+    outputSchema: SESSION_REACHABLE_TOOL_DETAILS_SCHEMA,
     renderResult(result, options, theme, context) {
       const output = result.content.find((item) => item.type === "text")?.text ?? "";
       if (context.isError) {
@@ -108,6 +109,7 @@ export function createSessionReachableTool(deps: SessionReachableDeps): ToolDefi
       return {
         content: [{ type: "text" as const, text: JSON.stringify(details, null, 2) }],
         details,
+        structuredContent: details,
       };
     },
   });

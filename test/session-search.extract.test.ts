@@ -206,6 +206,51 @@ describe("extractSessionRecord", () => {
     );
   });
 
+  it("extracts file touches from nested tool calls recorded on a tool result", () => {
+    const root = testFs.createTempDir();
+    const filePath = testFs.writeJsonlFile(root, "session.jsonl", [
+      { type: "session", id: "session-1", timestamp: "2026-09-29T00:00:00.000Z", cwd: root },
+      {
+        type: "message",
+        id: "codemode-result",
+        parentId: null,
+        timestamp: "2026-09-29T00:00:01.000Z",
+        message: {
+          role: "toolResult",
+          toolCallId: "call-1",
+          toolName: "codemode",
+          content: [{ type: "text", text: "done" }],
+          isError: false,
+          nestedCalls: {
+            complete: true,
+            calls: [
+              { id: "n1", name: "read", arguments: { path: "src/a.ts" }, status: "ok" },
+              { id: "n2", name: "edit", arguments: { path: "src/b.ts" }, status: "ok" },
+              { id: "n3", name: "write", argumentsBytes: 900_000, status: "ok" },
+              { id: "n4", name: "bash", arguments: { command: "ls" }, status: "ok" },
+            ],
+          },
+          timestamp: Date.parse("2026-09-29T00:00:01.000Z"),
+        },
+      },
+    ]);
+
+    expect(extractSessionRecord(filePath)?.fileTouches).toEqual([
+      expect.objectContaining({
+        entryId: "codemode-result",
+        op: "read",
+        source: "tool_call",
+        rawPath: "src/a.ts",
+      }),
+      expect.objectContaining({
+        entryId: "codemode-result",
+        op: "changed",
+        source: "tool_call",
+        rawPath: "src/b.ts",
+      }),
+    ]);
+  });
+
   it("classifies a child with a matching parent launch as subagent origin", () => {
     const root = testFs.createTempDir();
     const parentPath = `${root}/parent.jsonl`;
