@@ -8,6 +8,7 @@ export function createFakeExtensionApi(): ExtensionAPI {
   return {
     on: vi.fn(),
     registerTool: vi.fn(),
+    registerToolRenderer: vi.fn(),
     registerCommand: vi.fn(),
     registerShortcut: vi.fn(),
     registerFlag: vi.fn(),

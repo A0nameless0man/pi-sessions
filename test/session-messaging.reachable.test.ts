@@ -169,6 +169,7 @@ describe("session_reachable tool", () => {
 
     expect(listSubagents).toHaveBeenCalledWith("branch");
     expect(tool.outputSchema).toBe(SESSION_REACHABLE_TOOL_DETAILS_SCHEMA);
+    expect(tool.annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
     expect(Value.Check(SESSION_REACHABLE_TOOL_DETAILS_SCHEMA, result.structuredContent)).toBe(true);
     expect(result.structuredContent).toEqual(result.details);
     expect(details.scope).toBe("branch");

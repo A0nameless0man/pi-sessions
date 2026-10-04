@@ -228,6 +228,7 @@ describe("extractSessionRecord", () => {
               { id: "n2", name: "edit", arguments: { path: "src/b.ts" }, status: "ok" },
               { id: "n3", name: "write", argumentsBytes: 900_000, status: "ok" },
               { id: "n4", name: "bash", arguments: { command: "ls" }, status: "ok" },
+              { id: "n5", name: "write", arguments: { path: "src/c.ts" }, status: "error" },
             ],
           },
           timestamp: Date.parse("2026-09-29T00:00:01.000Z"),

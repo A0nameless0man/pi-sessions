@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.14.1] - 2026-10-04
+
+### Fixed
+
+- Session indexing no longer records a file as changed when an `edit` or `write` called from inside another tool, such as a codemode script, failed.
+- `session_reachable` is now marked read-only, like `session_search` and `session_ask`.
+
 ## [0.14.0] - 2026-09-30
 
 ### Added

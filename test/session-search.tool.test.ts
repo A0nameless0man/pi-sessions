@@ -108,6 +108,9 @@ describe("session_search tool", () => {
         modifiedAt: "2026-03-22T00:30:00.000Z",
         messageCount: 1,
         entryCount: 1,
+        parentSessionPath: "/tmp/session-1.jsonl",
+        parentSessionId: "session-1",
+        sessionOrigin: "handoff",
       },
       "full_reindex",
     );
@@ -132,7 +135,12 @@ describe("session_search tool", () => {
     expect(Value.Check(SESSION_SEARCH_OUTPUT_SCHEMA, result.structuredContent)).toBe(true);
     expect(result.structuredContent).toEqual({
       results: [
-        expect.objectContaining({ sessionId: "session-2", sessionName: "Second title" }),
+        expect.objectContaining({
+          sessionId: "session-2",
+          sessionName: "Second title",
+          sessionOrigin: "handoff",
+          parentSessionId: "session-1",
+        }),
         expect.objectContaining({ sessionId: "session-1" }),
       ],
     });

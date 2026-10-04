@@ -638,7 +638,7 @@ function extractMessageFileTouches(
     toolCalls = message.content.filter(isToolCallBlock);
   } else if (message.role === "toolResult" && message.nestedCalls) {
     // Calls made through ctx.executeTool(), e.g. from a codemode script, only appear here.
-    toolCalls = message.nestedCalls.calls;
+    toolCalls = message.nestedCalls.calls.filter((call) => call.status !== "error");
   } else {
     return [];
   }

@@ -76,6 +76,7 @@ export function createSessionReachableTool(deps: SessionReachableDeps): ToolDefi
     promptGuidelines: [
       "Before session_send_message, use session_reachable to find the target session id.",
     ],
+    annotations: { readOnlyHint: true, openWorldHint: false },
     parameters: subagentsAvailable ? SESSION_REACHABLE_PARAMS : SESSION_REACHABLE_USER_PARAMS,
     outputSchema: SESSION_REACHABLE_TOOL_DETAILS_SCHEMA,
     renderResult(result, options, theme, context) {
