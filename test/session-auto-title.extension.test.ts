@@ -1,17 +1,31 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionSettings } from "../extensions/shared/settings.ts";
-import { createFakeModelRegistry, createFakeModelRuntime } from "./test-helpers.ts";
+import {
+  createFakeModelRegistry,
+  createFakeModelRuntime,
+  createTestFilesystem,
+} from "./test-helpers.ts";
 
-const { completeSimpleMock, loadSettingsMock } = vi.hoisted(() => ({
+const testFs = createTestFilesystem("pi-sessions-auto-title-extension-");
+const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+const { completeSimpleMock, loadSettingsMock, runsDirMock } = vi.hoisted(() => ({
   completeSimpleMock: vi.fn(),
   loadSettingsMock: vi.fn(),
+  runsDirMock: vi.fn(),
 }));
 
 vi.mock("../extensions/shared/settings.ts", () => ({
   loadSettings: loadSettingsMock,
+  // Failed requests are recorded as run sessions; keep them inside the test's own temp dir.
+  getDefaultAutoTitleRunsDir: runsDirMock,
 }));
 
 beforeEach(() => {
+  // Auto-title writes failed requests under the agent dir; keep them out of the real one.
+  process.env.PI_CODING_AGENT_DIR = testFs.createTempDir();
+  runsDirMock.mockReturnValue(path.join(process.env.PI_CODING_AGENT_DIR, "session-auto-title"));
   vi.resetModules();
   vi.clearAllMocks();
   loadSettingsMock.mockReturnValue({
@@ -24,6 +38,15 @@ beforeEach(() => {
       prompt: "Default auto-title prompt",
     },
   });
+});
+
+afterEach(() => {
+  if (originalAgentDir === undefined) {
+    delete process.env.PI_CODING_AGENT_DIR;
+  } else {
+    process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  }
+  testFs.cleanup();
 });
 
 describe("session auto-title extension", () => {

@@ -2,7 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model, TextContent, UserMessage } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AutoTitleContext } from "./context.ts";
-import { type AutoTitleRun, startAutoTitleRun } from "./runs.ts";
+import { type AutoTitleRun, type AutoTitleRunRequest, startAutoTitleRun } from "./runs.ts";
 import type { AutoTitleTrigger } from "./state.ts";
 
 const AUTO_TITLE_CHAR_MAX = 80;
@@ -65,17 +65,16 @@ export async function generateAutoTitle(
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), generation.timeoutMs);
   const thinkingLevel = generation.thinkingLevel;
-  const run = generation.persistRuns
-    ? startAutoTitleRun({
-        cwd: context.cwd ?? process.cwd(),
-        model,
-        trigger,
-        systemPrompt: resolvedSystemPrompt,
-        tokenBudget: generation.tokenBudget,
-        thinkingLevel,
-        message,
-      })
-    : undefined;
+  const request: AutoTitleRunRequest = {
+    cwd: context.cwd ?? process.cwd(),
+    model,
+    trigger,
+    systemPrompt: resolvedSystemPrompt,
+    tokenBudget: generation.tokenBudget,
+    thinkingLevel,
+    message,
+  };
+  const run = generation.persistRuns ? startAutoTitleRun(request) : undefined;
 
   try {
     const response = await modelRegistry
@@ -98,14 +97,14 @@ export async function generateAutoTitle(
     if (response.stopReason === "error" || response.stopReason === "aborted") {
       const fallbackMessage =
         response.stopReason === "aborted" ? "Request was aborted." : "Provider returned an error.";
-      return failGeneration(run, trigger, model, response.errorMessage || fallbackMessage);
+      return failGeneration(run, request, model, response.errorMessage || fallbackMessage);
     }
 
     const normalizedTitle = normalizeGeneratedAutoTitle(extractResponseText(response.content));
     if (!normalizedTitle) {
       return failGeneration(
         run,
-        trigger,
+        request,
         model,
         describeEmptyTitle(response.stopReason === "length", generation.tokenBudget),
       );
@@ -116,7 +115,7 @@ export async function generateAutoTitle(
       title: normalizedTitle,
     };
   } catch (error) {
-    return failGeneration(run, trigger, model, extractErrorMessage(error));
+    return failGeneration(run, request, model, extractErrorMessage(error));
   } finally {
     clearTimeout(timeoutId);
   }
@@ -135,16 +134,29 @@ export function createAutoTitleFailure(
   };
 }
 
+/**
+ * A failed title otherwise leaves nothing the user can inspect: the notification is transient, and
+ * the request is only persisted when `persistRuns` is on. Failures are always recorded, so a broken
+ * titler (no model balance, spent budget, oversized request) can still be replayed afterwards.
+ */
 function failGeneration(
   run: AutoTitleRun | undefined,
-  trigger: AutoTitleTrigger,
+  request: AutoTitleRunRequest,
   model: Model<Api>,
   message: string,
 ): AutoTitleGenerationResult {
-  run?.recordFailure(message);
+  // Recording is diagnostic: a filesystem problem must not swallow the failure itself, which is
+  // what tells the user their titles stopped being refreshed.
+  try {
+    const recorded = run ?? startAutoTitleRun(request);
+    recorded.recordFailure(message);
+  } catch {
+    // Ignore: the failure is still reported through the returned result.
+  }
+
   return {
     ok: false,
-    failure: createAutoTitleFailure(trigger, model, message),
+    failure: createAutoTitleFailure(request.trigger, model, message),
   };
 }
 
@@ -179,6 +191,10 @@ function buildAutoTitlePrompt(
 
   if (shouldPreserveTitle) {
     sections.push(`<current_title>${context.currentTitle ?? ""}</current_title>`);
+  }
+
+  if (context.compressedHistoryText) {
+    sections.push(`<compressed_history>\n${context.compressedHistoryText}\n</compressed_history>`);
   }
 
   sections.push(`<conversation>\n${context.conversationText || "(none)"}\n</conversation>`);
