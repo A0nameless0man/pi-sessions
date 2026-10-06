@@ -268,7 +268,7 @@ To manage existing titles, run `/title`, where you can:
 
 ![session title window](images/session-title.png)
 
-Note that generating titles for all sessions can take some time, and will hit your configured model with the full contents of all sessions.
+Note that generating titles for all sessions can take some time: each session is sent to your configured model.
 
 - automatic retitles run every few turns
 - if you manually rename a session with `/name`, automatic retitling pauses for that session
@@ -299,6 +299,12 @@ To change auto-titling settings, edit `~/.pi/agent/settings.json`:
 ```
 
 `persistRuns` records each title request as its own session file under `~/.pi/agent/pi-sessions/session-auto-title/`, holding the exact prompt and response. Open one with `pi --session <file>` to see what the titling model was sent.
+
+A title request is sent a bounded view of the session: the user's and the assistant's text only. Thinking, tool call arguments (a single `write` argument can dwarf the conversation), and tool output are left out — a title does not need them, and they dominated the request on long sessions. The first user message is always kept and the newest turns fill the rest, up to 16,000 characters of conversation with each message capped at 2,000 characters.
+
+Compressed history is carried, not replayed. Pi's compaction checkpoints and the acp extension's compression blocks are both collapsed into a `<compressed_history>` section, and messages that compression already replaced are omitted. Without that section a titler on a long session would be re-sent everything the model itself no longer sees: a 7.5 MB session meant roughly 600k tokens for a single one-line answer.
+
+Failures are recorded under `~/.pi/agent/pi-sessions/session-auto-title/` even when `persistRuns` is off, so a titler that stopped refreshing (model out of balance, budget spent) can be diagnosed from the request that failed.
 
 ## Development
 

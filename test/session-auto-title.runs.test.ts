@@ -68,6 +68,32 @@ describe("auto-title run persistence", () => {
     expect(readdirSync(process.env.PI_CODING_AGENT_DIR)).toEqual([]);
   });
 
+  it("records a failure even when persistRuns is off", async () => {
+    process.env.PI_CODING_AGENT_DIR = testFs.createTempDir();
+    const completeSimple = vi.fn().mockResolvedValue({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: "1113 insufficient balance",
+      content: [],
+    });
+
+    await generateAutoTitle(createRuntime(completeSimple), model, titleContext, "initial", {
+      systemPrompt: "Name this coding session.",
+      timeoutMs: 15_000,
+      tokenBudget: 64,
+      thinkingLevel: undefined,
+      persistRuns: false,
+    });
+
+    const entries = runEntries();
+    expect(
+      entries.find((entry) => entry.customType === AUTO_TITLE_RUN_REQUEST_CUSTOM_TYPE),
+    ).toBeDefined();
+    expect(
+      entries.find((entry) => entry.customType === AUTO_TITLE_RUN_FAILURE_CUSTOM_TYPE)?.data,
+    ).toEqual({ message: "1113 insufficient balance" });
+  });
+
   it("records the full prompt and response as a replayable session", async () => {
     process.env.PI_CODING_AGENT_DIR = testFs.createTempDir();
     const completeSimple = vi.fn().mockResolvedValue({
