@@ -2,6 +2,13 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.14.2] - 2026-10-08
+
+### Fixed
+
+- Subagent bookkeeping no longer fails when the tmux server is shutting down at the same moment, which tmux reports as `server exited unexpectedly` or `no current target`. A subagent launch that hits a dying server now starts a fresh one.
+- Subagent lifecycle failures now show as a one-line error notice. Before, they could fill the screen with a stack trace, or crash pi when they came from a background poll.
+
 ## [0.14.1] - 2026-10-04
 
 ### Fixed
