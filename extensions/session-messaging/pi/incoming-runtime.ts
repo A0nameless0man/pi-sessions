@@ -21,6 +21,7 @@ interface IncomingMessageActions {
 
 export class IncomingSessionMessageRuntime {
   private context: ExtensionContext | undefined;
+  private ready = false;
   private readonly actions: IncomingMessageActions;
 
   constructor(pi: ExtensionAPI) {
@@ -32,10 +33,17 @@ export class IncomingSessionMessageRuntime {
 
   bindContext(ctx: ExtensionContext): void {
     this.context = ctx;
+    this.ready = false;
+  }
+
+  open(): void {
+    this.replayPending(this.requireContext());
+    this.ready = true;
   }
 
   clearContext(): void {
     this.context = undefined;
+    this.ready = false;
   }
 
   deliver(received: ReceivedMessageEntry): void {
@@ -47,14 +55,18 @@ export class IncomingSessionMessageRuntime {
       throw new Error(SESSION_STARTING_MESSAGE);
     }
     this.actions.appendEntry(MESSAGE_RECEIVED_CUSTOM_TYPE, received);
-    this.inject(ctx, received);
+    // The broker connects before other features finish session_start, and a turn started now
+    // would run without the tools they activate. The receipt is durable; open() replays it.
+    if (this.ready) {
+      this.inject(ctx, received);
+    }
   }
 
   cancel(): void {
     this.requireContext().abort();
   }
 
-  replayPending(ctx: ExtensionContext): void {
+  private replayPending(ctx: ExtensionContext): void {
     const entries = ctx.sessionManager.getEntries();
     const deliveredMessageIds = new Set<string>();
     const pendingReceipts: ReceivedMessageEntry[] = [];

@@ -11,6 +11,8 @@ import type {
  */
 export interface SessionLifecycle {
   onSessionStart?(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> | void;
+  /** Runs once every feature's onSessionStart has resolved. */
+  onSessionReady?(ctx: ExtensionContext): void;
   onSessionShutdown?(event: SessionShutdownEvent, ctx: ExtensionContext): Promise<void> | void;
 }
 

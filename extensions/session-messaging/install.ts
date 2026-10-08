@@ -65,10 +65,12 @@ export function installMessaging(
     onIncomingSubagentReport: (handler) => service.onIncomingSubagentReport(handler),
     async onSessionStart(_event, ctx) {
       incomingRuntime.bindContext(ctx);
-      incomingRuntime.replayPending(ctx);
       try {
         await service.start(ctx);
       } catch {}
+    },
+    onSessionReady() {
+      incomingRuntime.open();
     },
     onSessionShutdown() {
       incomingRuntime.clearContext();

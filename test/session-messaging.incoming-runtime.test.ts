@@ -63,12 +63,48 @@ test("delivery proceeds once the kickoff has consumed the bootstrap", () => {
   };
   runtime.bindContext({
     isIdle: () => true,
-    sessionManager: { getBranch: () => [pendingBootstrapEntry(), kickoff] },
+    sessionManager: {
+      getBranch: () => [pendingBootstrapEntry(), kickoff],
+      getEntries: () => [pendingBootstrapEntry(), kickoff],
+    },
   } as never);
+  runtime.open();
 
   runtime.deliver(receivedMessage());
   expect(appendEntry).toHaveBeenCalledOnce();
   expect(sendMessage).toHaveBeenCalledOnce();
+});
+
+test("delivery before the session is ready records the receipt and injects it on open", () => {
+  const entries: unknown[] = [];
+  const appendEntry = vi.fn((customType: string, data: unknown) => {
+    entries.push({ type: "custom", customType, data });
+  });
+  const sendMessage = vi.fn();
+  const runtime = new IncomingSessionMessageRuntime({ appendEntry, sendMessage } as never);
+  runtime.bindContext({
+    isIdle: () => true,
+    sessionManager: { getBranch: () => [], getEntries: () => entries },
+  } as never);
+  const received = {
+    messageId: "m-1",
+    body: "hello",
+    source: { sessionId: "parent-1" },
+    target: { sessionId: "child-1" },
+    sentAt: "2026-10-08T00:00:00.000Z",
+    receivedAt: "2026-10-08T00:00:00.000Z",
+    requestResponse: true,
+  };
+
+  runtime.deliver(received);
+  expect(appendEntry).toHaveBeenCalledOnce();
+  expect(sendMessage).not.toHaveBeenCalled();
+
+  runtime.open();
+  expect(sendMessage).toHaveBeenCalledOnce();
+  expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ details: received }), {
+    triggerTurn: true,
+  });
 });
 
 test("incoming cancellation aborts the target runtime before acceptance", () => {

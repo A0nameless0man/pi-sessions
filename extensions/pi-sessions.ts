@@ -24,7 +24,8 @@ import { installSubagents } from "./subagents/install.ts";
  * The single advertised entrypoint. It loads settings once, constructs each feature in
  * dependency order, and wires them by constructor parameters.
  * It also owns the single `session_start`/`session_shutdown` subscription so lifecycle order
- * is deterministic: broker registration (messaging) resolves before any other feature hook.
+ * is deterministic: broker registration (messaging) resolves before any other feature hook,
+ * and incoming messages start turns only once every feature hook has resolved.
  */
 export default function piSessions(pi: ExtensionAPI): void {
   const settings = loadSettings();
@@ -140,6 +141,9 @@ export default function piSessions(pi: ExtensionAPI): void {
     sessionEpoch += 1;
     for (const lifecycle of lifecycles) {
       await lifecycle.onSessionStart?.(event, ctx);
+    }
+    for (const lifecycle of lifecycles) {
+      lifecycle.onSessionReady?.(ctx);
     }
   });
 
