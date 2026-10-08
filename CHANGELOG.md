@@ -2,7 +2,9 @@
 
 <!-- markdownlint-disable MD024 -->
 
-## Unreleased
+## [0.15.0] - 2026-10-08
+
+- **Host extension API** - Other Pi extensions can now decide where handoff sessions run, and let messages wake their dormant sessions. See [Host extension API (v1)](README.md#host-extension-api-v1).
 
 ### Added
 
