@@ -1,4 +1,8 @@
-import type { ExtensionAPI, SessionTreeNode } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionUIContext,
+  SessionTreeNode,
+} from "@earendil-works/pi-coding-agent";
 import type { HandoffLaunchTarget } from "../session-handoff/launch-target.ts";
 import type {
   MessagingHandle,
@@ -23,7 +27,7 @@ import {
   SUBAGENT_REPORT_MESSAGE_SCHEMA,
   SUBAGENT_REPORT_RECEIVED_CUSTOM_TYPE,
 } from "./ledger.ts";
-import { openReconcileSession, SubagentReconciler } from "./reconcile.ts";
+import { openReconcileSession, type ReconcileResult, SubagentReconciler } from "./reconcile.ts";
 import {
   buildIncomingSubagentReport,
   createSubmitTaskReportTool,
@@ -51,6 +55,7 @@ interface ParentSessionState extends SubagentParentSession {
   getTree(): SessionTreeNode[];
   hasPendingMessages(): boolean;
   shutdown(): void;
+  reportError(error: unknown): void;
 }
 
 interface CurrentSubagentSession {
@@ -178,9 +183,15 @@ export function installSubagents(
     if (!session || session.parent.sessionId !== ctx.sessionManager.getSessionId()) {
       return;
     }
-    const reconciliation = hasSubagentLaunchEntries(session.parent.getBranch())
-      ? await reconciler.reconcile()
-      : undefined;
+    let reconciliation: ReconcileResult | undefined;
+    try {
+      reconciliation = hasSubagentLaunchEntries(session.parent.getBranch())
+        ? await reconciler.reconcile()
+        : undefined;
+    } catch (error) {
+      notifySubagentFailure(ctx.ui, error);
+      return;
+    }
     if (session.child) {
       await contextLimit.compactIfOverLimit(ctx);
       await settledChildLifecycle.settle(session.parent, session.child, reconciliation);
@@ -233,11 +244,15 @@ export function installSubagents(
     );
   };
 
-  pi.on("session_tree", async () => {
+  pi.on("session_tree", async (_event, ctx) => {
     settledChildLifecycle.cancel();
     refreshChildSession();
     registerMessagingTools();
-    await reconciler.reconcileAndRestoreSuspended();
+    try {
+      await reconciler.reconcileAndRestoreSuspended();
+    } catch (error) {
+      notifySubagentFailure(ctx.ui, error);
+    }
   });
 
   const handle: SubagentsHandle = {
@@ -283,6 +298,7 @@ export function installSubagents(
         epoch,
         launchState: { sessionId, depth: identity?.depth ?? 0, epoch },
         tmuxInstalled: await isTmuxInstalled(pi, ctx.cwd),
+        reportError: (error) => notifySubagentFailure(ctx.ui, error),
       };
       reconciler.beginSession();
       current = { parent };
@@ -290,20 +306,37 @@ export function installSubagents(
       if (identity) {
         registerMessagingTools();
       }
-      if (_event.reason === "reload") {
-        await reconciler.reconcile();
-      } else {
-        await reconciler.reconcileAndRestoreSuspended();
+      try {
+        if (_event.reason === "reload") {
+          await reconciler.reconcile();
+        } else {
+          await reconciler.reconcileAndRestoreSuspended();
+        }
+      } catch (error) {
+        notifySubagentFailure(ctx.ui, error);
       }
     },
-    async onSessionShutdown(event) {
+    async onSessionShutdown(event, ctx) {
       settledChildLifecycle.cancel();
       if (current && event.reason !== "reload") {
-        await reconciler.suspendForShutdown();
+        try {
+          await reconciler.suspendForShutdown();
+        } catch (error) {
+          notifySubagentFailure(ctx.ui, error);
+        }
       }
       epoch += 1;
       current = undefined;
     },
   };
   return handle;
+}
+
+// Lifecycle hooks and timers run outside any tool call. Pi renders a thrown error's full stack
+// over the conversation, so report only the message.
+function notifySubagentFailure(ui: ExtensionUIContext, error: unknown): void {
+  ui.notify(
+    `Subagent lifecycle failed: ${error instanceof Error ? error.message : String(error)}`,
+    "error",
+  );
 }

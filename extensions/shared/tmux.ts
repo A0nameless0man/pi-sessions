@@ -2,6 +2,7 @@ import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 
 const TMUX_COMMAND = "tmux";
 const TMUX_TIMEOUT_MS = 15_000;
+const CREATE_WINDOW_ATTEMPTS = 3;
 const SESSION_ID_OPTION = "@pi_session_id";
 const WINDOW_FORMAT = "#{window_id}\t#{window_name}\t#{@pi_session_id}";
 
@@ -103,15 +104,31 @@ export async function createTmuxWindow(
   }
 }
 
+// The server can exit between any two commands below; the next attempt starts a fresh one.
 async function createWindow(
   executor: TmuxExecutor,
   options: CreateTmuxWindowOptions,
 ): Promise<TmuxWindow> {
+  for (let attempt = 1; ; attempt += 1) {
+    const outcome = await attemptCreateWindow(executor, options);
+    if ("window" in outcome) {
+      return outcome.window;
+    }
+    if (attempt === CREATE_WINDOW_ATTEMPTS || !isMissingSession(outcome.result)) {
+      throw tmuxError(outcome.action, outcome.result);
+    }
+  }
+}
+
+async function attemptCreateWindow(
+  executor: TmuxExecutor,
+  options: CreateTmuxWindowOptions,
+): Promise<{ window: TmuxWindow } | { action: string; result: ExecResult }> {
   const existing = (await listTmuxWindows(executor, options.tmuxSession)).find(
     (window) => window.piSessionId === options.piSessionId,
   );
   if (existing) {
-    return existing;
+    return { window: existing };
   }
 
   const sessionExists = await hasTmuxSession(executor, options.tmuxSession);
@@ -149,7 +166,7 @@ async function createWindow(
     timeout: TMUX_TIMEOUT_MS,
   });
   if (created.code !== 0) {
-    throw tmuxError("create window", created);
+    return { action: "create window", result: created };
   }
 
   const windowId = created.stdout.trim();
@@ -165,10 +182,10 @@ async function createWindow(
     await executor.exec(TMUX_COMMAND, ["kill-window", "-t", windowId], {
       timeout: TMUX_TIMEOUT_MS,
     });
-    throw tmuxError("stamp window", stamped);
+    return { action: "stamp window", result: stamped };
   }
 
-  return { windowId, name: options.name, piSessionId: options.piSessionId };
+  return { window: { windowId, name: options.name, piSessionId: options.piSessionId } };
 }
 
 export async function killTmuxWindow(
@@ -215,8 +232,10 @@ function parseWindow(line: string): TmuxWindow | undefined {
   return { windowId, name, piSessionId };
 }
 
+// A server that is shutting down answers in-flight commands with `no current target` (its last
+// session is gone but it has not exited yet) or drops them with `server exited unexpectedly`.
 function isMissingSession(result: ExecResult): boolean {
-  return /can't find session|no server running|failed to connect to server|error connecting to .*no such file/i.test(
+  return /can't find session|no current target|no server running|server exited unexpectedly|failed to connect to server|error connecting to .*no such file/i.test(
     `${result.stderr}\n${result.stdout}`,
   );
 }

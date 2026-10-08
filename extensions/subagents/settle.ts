@@ -25,6 +25,7 @@ export interface SettledChildParentSession {
   hasPendingMessages(): boolean;
   isIdle(): boolean;
   shutdown(): void;
+  reportError(error: unknown): void;
 }
 
 export interface SettledChildLifecycle {
@@ -72,7 +73,11 @@ export function createSettledChildLifecycle(
       const schedule = (delayMs: number): void => {
         timer = setTimeout(() => {
           timer = undefined;
-          void advance();
+          advance().catch((error: unknown) => {
+            if (isCurrentSession(parent.epoch)) {
+              parent.reportError(error);
+            }
+          });
         }, delayMs);
       };
       const advance = async (): Promise<void> => {

@@ -38,6 +38,7 @@ describe("settled child recovery", () => {
         isIdle: () => idleAtRecovery,
         hasPendingMessages: () => false,
         shutdown: vi.fn(),
+        reportError: vi.fn(),
       };
       const pi = {
         appendEntry: vi.fn(),

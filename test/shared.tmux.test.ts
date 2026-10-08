@@ -50,6 +50,76 @@ describe("tmux substrate", () => {
     await expect(listTmuxWindows(executor, "pi-deadbeef")).resolves.toEqual([]);
   });
 
+  it.each(["server exited unexpectedly", "no current target"])(
+    "treats a server shutting down with `%s` as having no session",
+    async (stderr) => {
+      const vanishing = (): ExecResult => ({ stdout: "", stderr, code: 1, killed: false });
+      const executor = fakeExecutor(vanishing(), vanishing(), vanishing(), missing());
+
+      await expect(listTmuxWindows(executor, "pi-deadbeef")).resolves.toEqual([]);
+      await expect(hasAttachedTmuxClients(executor, "pi-deadbeef")).resolves.toBe(false);
+      await expect(killTmuxSession(executor, "pi-deadbeef")).resolves.toBe(true);
+    },
+  );
+
+  it("starts a fresh server when the old one exits mid-launch", async () => {
+    const executor = fakeExecutor(
+      ok(),
+      ok(),
+      { ...missing(), stderr: "server exited unexpectedly" },
+      ok(),
+      { ...missing(), stderr: "no server running on /tmp/tmux-1000/default" },
+      ok("@1\n"),
+      ok(),
+    );
+
+    await expect(
+      createTmuxWindow(executor, {
+        tmuxSession: "pi-88171ce49021",
+        name: "Worker",
+        cwd: "/tmp/project",
+        command: "pi --session-id child-1",
+        piSessionId: "child-1",
+      }),
+    ).resolves.toEqual({ windowId: "@1", name: "Worker", piSessionId: "child-1" });
+    expect(executor.exec.mock.calls.map(([, args]) => args[0])).toEqual([
+      "list-windows",
+      "has-session",
+      "new-window",
+      "list-windows",
+      "has-session",
+      "new-session",
+      "set-option",
+    ]);
+  });
+
+  it("gives up on a server that keeps exiting and on errors other than a vanished server", async () => {
+    const exited = (): ExecResult => ({
+      ...missing(),
+      stderr: "server exited unexpectedly",
+    });
+    const options = {
+      tmuxSession: "pi-88171ce49021",
+      name: "Worker",
+      cwd: "/tmp/project",
+      command: "pi --session-id child-1",
+      piSessionId: "child-1",
+    };
+
+    const flapping = fakeExecutor(...[1, 2, 3].flatMap(() => [ok(), missing(), exited()]));
+    await expect(createTmuxWindow(flapping, options)).rejects.toThrow(
+      "Failed to create window with tmux: server exited unexpectedly",
+    );
+    expect(flapping.exec).toHaveBeenCalledTimes(9);
+
+    const broken = fakeExecutor(ok(), missing(), {
+      ...missing(),
+      stderr: "create window failed: index 0 in use",
+    });
+    await expect(createTmuxWindow(broken, options)).rejects.toThrow("index 0 in use");
+    expect(broken.exec).toHaveBeenCalledTimes(3);
+  });
+
   it("detects attached clients for a managed tmux session", async () => {
     const executor = fakeExecutor(ok("/dev/ttys001\n"), ok());
 

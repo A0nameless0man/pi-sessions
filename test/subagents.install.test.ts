@@ -827,6 +827,35 @@ describe("subagent installation", () => {
     expect(ctx.shutdown).toHaveBeenCalledOnce();
   });
 
+  it("reports reconciliation failures without throwing from hooks or poll timers", async () => {
+    vi.useFakeTimers();
+    let tmuxBroken = false;
+    const { pi, handlers } = createPi({
+      tmuxInstalled: true,
+      ownedWindowSessionIds: () => [grandchildId],
+      listWindowsError: () => (tmuxBroken ? "protocol version mismatch" : undefined),
+    });
+    const handle = installSubagents(pi as never, createDeps(2));
+    const ctx = createContext(childId, childEntriesWithGrandchild());
+    await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
+    await handlers.get("agent_settled")?.({}, ctx);
+
+    tmuxBroken = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await handlers.get("agent_settled")?.({}, ctx);
+    await handlers.get("session_tree")?.({}, ctx);
+    await handle.onSessionShutdown?.({ type: "session_shutdown", reason: "quit" }, ctx as never);
+    await handle.onSessionStart?.({ type: "session_start", reason: "startup" }, ctx as never);
+
+    expect(ctx.ui.notify.mock.calls).toEqual(
+      Array.from({ length: 5 }, () => [
+        "Subagent lifecycle failed: Failed to list windows with tmux: protocol version mismatch",
+        "error",
+      ]),
+    );
+    expect(ctx.shutdown).not.toHaveBeenCalled();
+  });
+
   it("lingers while attached and exits after the observer detaches", async () => {
     vi.useFakeTimers();
     const { pi, handlers } = createPi({
@@ -902,6 +931,7 @@ function createPi(options: {
   tmuxInstalled: boolean;
   attachedResponses?: boolean[];
   ownedWindowSessionIds?: () => readonly string[];
+  listWindowsError?: () => string | undefined;
 }) {
   const handlers = new Map<
     string,
@@ -942,6 +972,10 @@ function createPi(options: {
         return { code: 0, stdout: attached ? "/dev/ttys001\n" : "", stderr: "" };
       }
       if (args[0] === "list-windows") {
+        const error = options.listWindowsError?.();
+        if (error) {
+          return { code: 1, stdout: "", stderr: error };
+        }
         const windows = options.ownedWindowSessionIds?.() ?? [];
         return {
           code: 0,
@@ -984,6 +1018,7 @@ function createContext(sessionId: string, entries: unknown[]) {
     isIdle: () => true,
     shutdown: vi.fn(),
     hasUI: false,
+    ui: { notify: vi.fn() },
     getContextUsage: () => ({ tokens: 500_000, contextWindow: 1_000_000, percent: 50 }),
     compact: vi.fn((options: { onComplete?: () => void }) => options.onComplete?.()),
   };
