@@ -133,7 +133,7 @@ class RpcSession {
   }
 }
 
-test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and checkout identity", async () => {
+test.each([false, true])("real Pi integration (host: %s)", async (withHost) => {
   const version = execFileSync("pi", ["--version"], { encoding: "utf8" }).trim();
   const expected = JSON.parse(
     readFileSync(
@@ -150,6 +150,7 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
   const cwd = join(root, "project");
   const childCwd = join(root, "other-project");
   const socket = join(root, "tmux.sock");
+  const hostSocket = join(root, "host.sock");
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     HOME: root,
@@ -159,6 +160,7 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
     PI_OFFLINE: "1",
     PI_CODING_AGENT_DIR: agentDir,
     PI_SESSIONS_MESSAGING_DIR: join(root, "broker"),
+    ...(withHost ? { SMOKE_HOST_SOCKET: hostSocket } : {}),
   };
   for (const directory of [agentDir, cwd, childCwd, artifacts, join(agentDir, "pi-sessions")]) {
     mkdirSync(directory, { recursive: true });
@@ -167,11 +169,17 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
     join(agentDir, "settings.json"),
     JSON.stringify({
       packages: [resolve(packageRoot)],
-      extensions: [join(packageRoot, "test/smoke/install.ts")],
+      extensions: [
+        join(packageRoot, "test/smoke/install.ts"),
+        join(packageRoot, "test/smoke/host-install.ts"),
+      ],
       defaultProvider: "smoke",
       defaultModel: "scripted",
       defaultThinkingLevel: "off",
-      sessions: { autoTitle: { enable: false }, handoff: { deferred: { copyToClipboard: false } } },
+      sessions: {
+        autoTitle: { enable: false },
+        handoff: { deferred: { copyToClipboard: false } },
+      },
     }),
   );
   const db = openIndexDatabase(join(agentDir, "pi-sessions/index.sqlite"));
@@ -186,10 +194,18 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
       timeout: 5_000,
     }).trim();
   const sessions: RpcSession[] = [];
+  const hostTmux = (...args: string[]) =>
+    execFileSync("tmux", ["-S", hostSocket, ...args], {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout: 5_000,
+    }).trim();
   const parentId = randomUUID();
   const peerId = randomUUID();
   let childId: string | undefined;
   let serverStarted = false;
+  let hostStarted = false;
   let passed = false;
   const errors: unknown[] = [];
   try {
@@ -197,6 +213,11 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
     serverStarted = true;
     tmux("set-option", "-g", "default-shell", "/bin/sh");
     env.TMUX = `${socket},${tmux("display-message", "-p", "#{pid}")},0`;
+    if (withHost) {
+      hostTmux("-f", "/dev/null", "new-session", "-d", "-s", "host", "exec cat");
+      hostStarted = true;
+      hostTmux("set-option", "-g", "default-shell", "/bin/sh");
+    }
     const ready = async (id: string, rpc?: RpcSession) => {
       const file = join(agentDir, `${id}.ready.json`);
       await waitFor(`ready ${id}`, () => {
@@ -222,6 +243,19 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
     await ready(peerId, peer);
 
     await parent.tool("write", { path: "fresh.txt", content: "SMOKE_FRESH_TOKEN" });
+    if (withHost) {
+      const tools = JSON.parse(readFileSync(join(agentDir, `${parentId}.tools.json`), "utf8")) as {
+        name: string;
+        parameters: unknown;
+      }[];
+      expect(tools.find((tool) => tool.name === "session_handoff")?.parameters).toMatchObject({
+        properties: {
+          launch: {
+            anyOf: [{ const: "fake-host" }, { const: "deferred" }, { const: "subagent" }],
+          },
+        },
+      });
+    }
     const search = await peer.tool("session_search", { files: { changed: ["fresh.txt"] } });
     expect(JSON.stringify(search.details)).toContain(parentId);
     expect(readFileSync(join(cwd, "fresh.txt"), "utf8")).toBe("SMOKE_FRESH_TOKEN");
@@ -307,6 +341,77 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
     expect(messages).toHaveLength(2);
     expect(new Set(messages.map((message) => message.reportId)).size).toBe(2);
     expect(messages.every((message) => message.provenance === "live")).toBe(true);
+    if (withHost) {
+      const handoff = await parent.tool("session_handoff", {
+        goal: "Start work without draft review",
+        title: "Hosted smoke child",
+        launch: "fake-host",
+        cwd: childCwd,
+      });
+      const hosted = parseTypeBoxValue(
+        HANDOFF_TOOL_DETAILS_SCHEMA,
+        handoff.details,
+        "host receipt",
+      );
+      const first = await ready(hosted.sessionId);
+      expect(first.cwd).toBe(childCwd);
+      expect(hosted.backend).toBe("fake-host");
+      const accepted = () =>
+        SessionManager.open(hosted.childSessionFile)
+          .getEntries()
+          .some((entry) => entry.type === "message" && entry.message.role === "assistant");
+      await waitFor("host automatic first turn", () => (accepted() ? true : undefined));
+      const input = JSON.parse(readFileSync(join(agentDir, "host-session.json"), "utf8"));
+      expect(input).toMatchObject({
+        sessionId: hosted.sessionId,
+        sessionFile: hosted.childSessionFile,
+        cwd: childCwd,
+        title: "Hosted smoke child",
+        model: "smoke/scripted:off",
+      });
+      hostTmux("kill-window", "-t", `host:${hosted.sessionId}`);
+      // Query through the tool until the broker has observed the process exit.
+      let dormant = false;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const result = await parent.tool("session_reachable", {});
+        const details = result.details as {
+          sessions: { sessionId: string; state: string; host?: string }[];
+        };
+        const entry = details.sessions.find((session) => session.sessionId === hosted.sessionId);
+        if (entry?.state === "dormant") {
+          expect(entry.host).toBe("fake-host");
+          dormant = true;
+          break;
+        }
+      }
+      expect(dormant).toBe(true);
+      const delivered = await parent.tool("session_send_message", {
+        session: hosted.sessionId,
+        message: "HOST_WAKE_DELIVERY",
+        requestResponse: false,
+      });
+      expect(delivered.details).toMatchObject({ delivered: true });
+      await waitFor("host message in transcript", () =>
+        readFileSync(hosted.childSessionFile, "utf8").includes("HOST_WAKE_DELIVERY")
+          ? true
+          : undefined,
+      );
+      expect((await ready(hosted.sessionId)).pid).not.toBe(first.pid);
+      const live = await parent.tool("session_reachable", {});
+      expect(live.details).toMatchObject({
+        sessions: expect.arrayContaining([
+          expect.objectContaining({
+            sessionId: hosted.sessionId,
+            state: "live",
+            host: "fake-host",
+          }),
+        ]),
+      });
+      writeFileSync(
+        join(artifacts, "host-pane.txt"),
+        hostTmux("capture-pane", "-p", "-t", `host:${hosted.sessionId}`, "-S", "-100"),
+      );
+    }
     passed = true;
   } catch (error) {
     errors.push(error);
@@ -331,6 +436,7 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
     }
     for (const session of sessions) await cleanup(() => session.stop());
     if (serverStarted) await cleanup(() => tmux("kill-server"));
+    if (hostStarted) await cleanup(() => hostTmux("kill-server"));
     await cleanup(() =>
       waitFor(
         "broker idle exit",
@@ -377,6 +483,14 @@ test("isolated real Pi: hooks, discovery, handoff, report, dormant wake and chec
           "report delivery",
           "dormant wake",
           "second report",
+          ...(withHost
+            ? [
+                "external host enum",
+                "host automatic bootstrap",
+                "host dormant discovery",
+                "host wake and delivery",
+              ]
+            : []),
           "cleanup",
         ],
       },

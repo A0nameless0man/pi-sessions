@@ -90,4 +90,10 @@ export default function install(pi: ExtensionAPI): void {
     description: "Shut down this disposable smoke process",
     handler: async (_args, ctx) => ctx.shutdown(),
   });
+  pi.on("before_agent_start", (_event, ctx) => {
+    writeFileSync(
+      join(getAgentDir(), `${ctx.sessionManager.getSessionId()}.tools.json`),
+      JSON.stringify(pi.getAllTools()),
+    );
+  });
 }
