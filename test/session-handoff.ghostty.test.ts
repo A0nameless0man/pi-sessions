@@ -73,6 +73,9 @@ describe("ghostty launch backend", () => {
     const backend = createGhosttyLaunchBackend(pi as never, { direction: "right" });
 
     const result = await backend.launch({
+      sessionId: "child-session-123",
+      sessionFile: "/tmp/child.jsonl",
+      model: "openai/gpt-5.4",
       cwd: "/tmp/project",
       title: "Implement autocomplete",
       resumeCommand: resumeCommand("child-session-123"),
@@ -103,6 +106,9 @@ describe("ghostty launch backend", () => {
     });
 
     await backend.launch({
+      sessionId: "child-session-123",
+      sessionFile: "/tmp/child.jsonl",
+      model: "openai/gpt-5.4:medium",
       cwd: "/tmp/project",
       title: "Implement autocomplete",
       resumeCommand: buildPiResumeCommand({
@@ -135,6 +141,9 @@ describe("ghostty launch backend", () => {
     });
 
     const result = await backend.launch({
+      sessionId: "child-session-123",
+      sessionFile: "/tmp/child.jsonl",
+      model: "openai/gpt-5.4",
       cwd: "/tmp/project",
       title: "Implement autocomplete",
       resumeCommand: resumeCommand("child-session-123"),
@@ -151,6 +160,9 @@ describe("ghostty launch backend", () => {
     const backend = createGhosttyLaunchBackend(pi as never, { direction: "right" });
 
     const result = await backend.launch({
+      sessionId: "child-session-123",
+      sessionFile: "/tmp/child.jsonl",
+      model: "openai/gpt-5.4",
       cwd: "/tmp/project",
       title: "Implement autocomplete",
       resumeCommand: resumeCommand("child-session-123"),

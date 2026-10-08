@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { Host } from "../hosts/contract.ts";
 import { createDeferredLaunchBackend } from "./launch/deferred.ts";
 import type { SplitLaunchBackend } from "./launch/resolution.ts";
 import {
@@ -19,8 +20,10 @@ export function createHandoffLaunchTargets(options: {
   splitBackend: SplitLaunchBackend | undefined;
   copyDeferredToClipboard: boolean;
   additionalTargets: readonly HandoffLaunchTarget[];
+  hosts?: readonly Host[];
 }): HandoffLaunchTarget[] {
-  const splitBackend = options.splitBackend;
+  const hosts = options.hosts ?? [];
+  const splitBackend = hosts.length ? undefined : options.splitBackend;
   const splitTargets = splitBackend
     ? LAUNCH_DIRECTIONS.map((direction, index) =>
         createBackendLaunchTarget(
@@ -37,7 +40,19 @@ export function createHandoffLaunchTargets(options: {
     createDeferredLaunchBackend({ copyToClipboard: options.copyDeferredToClipboard }),
     "'deferred' creates the session and returns its resume command without opening anything.",
   );
-  return [...splitTargets, deferred, ...options.additionalTargets];
+  return [
+    ...hosts.map((host) =>
+      createBackendLaunchTarget(
+        host.name,
+        host,
+        `'${host.name}' opens a session in ${host.name}.`,
+        true,
+      ),
+    ),
+    ...splitTargets,
+    deferred,
+    ...options.additionalTargets,
+  ];
 }
 
 export function resolveHandoffLaunchTarget(

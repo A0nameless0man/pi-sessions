@@ -170,7 +170,7 @@ export function findSelfSubagentIdentity(
   if (
     bootstrap?.launch !== SUBAGENT_LAUNCH ||
     bootstrap.sessionId !== sessionId ||
-    bootstrap.subagent.childSessionId !== sessionId
+    bootstrap.subagent?.childSessionId !== sessionId
   ) {
     return undefined;
   }

@@ -3,12 +3,14 @@ import {
   type ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { HostRegistry } from "./hosts/registry.ts";
 import { installAsk } from "./session-ask/install.ts";
 import { installAutoTitle } from "./session-auto-title/install.ts";
 import { installHandoff } from "./session-handoff/install.ts";
 import { installHooks } from "./session-hooks/install.ts";
 import { installIndex } from "./session-index/install.ts";
 import { installMessaging } from "./session-messaging/install.ts";
+import { MessageRouter, type SessionWaker } from "./session-messaging/message-router.ts";
 import { createSessionReachableTool } from "./session-messaging/pi/reachable-tool.ts";
 import {
   createSessionCancelTool,
@@ -30,6 +32,7 @@ import { installSubagents } from "./subagents/install.ts";
 export default function piSessions(pi: ExtensionAPI): void {
   const settings = loadSettings();
   let sessionEpoch = 0;
+  const hosts = new HostRegistry();
 
   // The mirrored ModelRuntime is expensive to build and only changes across session
   // boundaries, so cache it per epoch (the root's own invalidation signal) instead of
@@ -54,31 +57,52 @@ export default function piSessions(pi: ExtensionAPI): void {
   if (messaging) {
     lifecycles.push(messaging);
   }
+  const wakers: SessionWaker[] = [hosts];
+  const messageRouter = messaging
+    ? new MessageRouter(messaging, wakers, () => sessionEpoch)
+    : undefined;
   const subagents =
-    settings.features.subagents && messaging
-      ? installSubagents(pi, { settings, messaging, readCompactionSettings })
+    settings.features.subagents && messaging && messageRouter
+      ? installSubagents(pi, {
+          settings,
+          messaging,
+          readCompactionSettings,
+          sendMessage: (request) => messageRouter.sendMessage(request),
+          hasHostedSessions: () => hosts.getHosts().some((host) => Boolean(host.wake)),
+        })
       : undefined;
   if (subagents) {
+    wakers.unshift(subagents.waker);
     lifecycles.push(subagents);
   }
-  if (messaging) {
+  const registerMessagingTools = (): void => {
+    if (!messaging || !messageRouter) return;
+    const isSubagent = subagents?.getParentSessionId() !== undefined;
+    const hostedSessions = hosts.getHosts().some((host) => Boolean(host.wake));
     pi.registerTool(
-      createSessionSendMessageTool(subagents ?? messaging, {
-        role: subagents ? { kind: "wakeCapable" } : { kind: "plain" },
+      createSessionSendMessageTool(messageRouter, {
+        role: isSubagent
+          ? { kind: "subagent" }
+          : subagents
+            ? { kind: "wakeCapable" }
+            : { kind: "plain" },
+        hostedSessions,
         getCachedRelationTo: messaging.getCachedRelationTo,
         ...(subagents ? { getParentSessionId: () => subagents.getParentSessionId() } : {}),
       }),
     );
     pi.registerTool(
       createSessionCancelTool(subagents ?? messaging, {
-        role: { kind: "plain" },
+        role: isSubagent ? { kind: "subagent" } : { kind: "plain" },
         ...(subagents ? { getParentSessionId: () => subagents.getParentSessionId() } : {}),
       }),
     );
     pi.registerTool(
       createSessionReachableTool({
         indexPath: index.path,
+        hostedSessions,
         listSessions: () => messaging.listSessions(),
+        listHostedSessions: () => hosts.listSessions(),
         getRelationTo: messaging.getCachedRelationTo,
         ...(subagents
           ? {
@@ -88,7 +112,8 @@ export default function piSessions(pi: ExtensionAPI): void {
           : {}),
       }),
     );
-  }
+  };
+  registerMessagingTools();
   if (settings.features.handoff) {
     const board = {
       roster: subagents?.roster,
@@ -103,6 +128,7 @@ export default function piSessions(pi: ExtensionAPI): void {
         settings,
         index,
         getModelRuntime,
+        getHosts: () => hosts.getHosts(),
         ...(subagents ? { getLaunchTargets: () => subagents.getLaunchTargets() } : {}),
         board,
       }),
@@ -139,9 +165,11 @@ export default function piSessions(pi: ExtensionAPI): void {
   // this ordering is intentional — do not reorder to "fix" it.
   pi.on("session_start", async (event, ctx) => {
     sessionEpoch += 1;
+    hosts.discover(pi.events);
     for (const lifecycle of lifecycles) {
       await lifecycle.onSessionStart?.(event, ctx);
     }
+    registerMessagingTools();
     for (const lifecycle of lifecycles) {
       lifecycle.onSessionReady?.(ctx);
     }

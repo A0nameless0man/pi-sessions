@@ -34,6 +34,53 @@ afterEach(() => {
 });
 
 describe("session_reachable tool", () => {
+  it("merges hosted sessions without duplicating live IDs or trusting host liveness", async () => {
+    const dbPath = createIndex((db) => {
+      insertIndexedSession(db, {
+        sessionId: "worker",
+        sessionName: "Worker",
+        sessionOrigin: "subagent",
+      });
+    });
+    const tool = createSessionReachableTool(
+      createDeps(dbPath, {
+        listSessions: async () => ["awake"],
+        getParentSessionId: () => "parent",
+        listHostedSessions: async () =>
+          ["awake", "asleep", "current-session", "parent", "worker"].map((sessionId) => ({
+            sessionId,
+            title: sessionId,
+            cwd: "/host/project",
+            host: "swb",
+          })),
+      }),
+    );
+    const result = await tool.execute("reachable", {}, undefined, undefined, createToolContext());
+    expect(result.details).toEqual({
+      scope: "user",
+      sessions: [
+        {
+          kind: "user",
+          sessionId: "awake",
+          state: "live",
+          title: "awake",
+          cwd: "/host/project",
+          host: "swb",
+        },
+        {
+          kind: "user",
+          sessionId: "asleep",
+          state: "dormant",
+          title: "asleep",
+          cwd: "/host/project",
+          host: "swb",
+        },
+      ],
+    });
+    expect(Value.Check(SESSION_REACHABLE_TOOL_DETAILS_SCHEMA, result.details)).toBe(true);
+    expect(renderTool(tool, {}, result)).toContain("dormant");
+  });
+
   it("lists live user sessions with relations and drops self and foreign subagents", async () => {
     const dbPath = createIndex((db) => {
       insertIndexedSession(db, { sessionId: "current-session", sessionName: "Current" });

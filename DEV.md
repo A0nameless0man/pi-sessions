@@ -52,6 +52,7 @@ Pi loads extension code directly from TypeScript source. Only the detached messa
 - **Session index**: `extensions/session-index/install.ts`; core logic at `extensions/session-search/reindex.ts` and `extensions/shared/session-index/`.
 - **Session hooks**: `extensions/session-hooks/install.ts`; core logic at `extensions/session-search/hooks.ts`.
 - **Session handoff**: `extensions/session-handoff/install.ts`; core logic at `extensions/session-handoff/`.
+- **Hosts**: public event contract and runtime registration at `extensions/hosts/`; the composition root discovers hosts at session start and composes host and subagent wakers through `extensions/session-messaging/message-router.ts`.
 - **Session messaging**: `extensions/session-messaging/install.ts`; broker/client/runtime logic and reachable-session discovery at `extensions/session-messaging/`.
 - **Session reference picker**: `extensions/session-handoff/install.ts`; core logic at `extensions/session-handoff/picker.ts` and `extensions/session-handoff/query.ts`.
 - **Session auto-title**: `extensions/session-auto-title/install.ts`; core logic at `extensions/session-auto-title/`.

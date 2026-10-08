@@ -1,16 +1,9 @@
-import type { HandoffLaunchTargetOutcome } from "../launch-target.ts";
+import type { Host, HostLaunchInput } from "../../hosts/contract.ts";
 
 export type HandoffSplitDirection = "left" | "right" | "up" | "down";
 
-export interface LaunchInput {
-  cwd: string;
-  title: string;
-  resumeCommand: string;
-}
+export type LaunchInput = HostLaunchInput;
 
 export type ClipboardStatus = "copied" | "failed";
 
-export interface LaunchBackend {
-  name: string;
-  launch(input: LaunchInput): Promise<HandoffLaunchTargetOutcome>;
-}
+export type LaunchBackend = Host;

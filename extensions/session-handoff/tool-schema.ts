@@ -1,6 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { type HandoffLaunchTarget, SUBAGENT_LAUNCH } from "./launch-target.ts";
+import { type HandoffLaunchTarget, LAUNCH_DIRECTIONS, SUBAGENT_LAUNCH } from "./launch-target.ts";
 import { formatRosterEntry, type HandoffRoster } from "./roster.ts";
 
 export function buildHandoffLaunchSchema(targets: readonly HandoffLaunchTarget[]) {
@@ -46,11 +46,19 @@ export function buildHandoffPromptGuidelines(
   roster: HandoffRoster | undefined,
 ): string[] {
   const hasSubagent = targets.some((target) => target.value === SUBAGENT_LAUNCH);
+  const hasHost = targets.some(
+    (target) =>
+      target.value !== "subagent" &&
+      target.value !== "deferred" &&
+      !LAUNCH_DIRECTIONS.some((direction) => direction === target.value),
+  );
   const selectable =
     roster?.map(formatRosterEntry) ?? models.map((model) => `${model.provider}/${model.id}`);
   return [
     ...(hasSubagent ? SUBAGENT_GUIDELINES : []),
-    LAUNCH_TARGET_GUIDELINE,
+    hasHost
+      ? "Use session_handoff host or deferred launches only when the user requests one."
+      : LAUNCH_TARGET_GUIDELINE,
     ...MODEL_INHERITANCE_GUIDELINES,
     hasSubagent ? SUBAGENT_MODEL_OVERRIDE_GUIDELINE : DEFAULT_MODEL_OVERRIDE_GUIDELINE,
     ...(selectable.length > 0

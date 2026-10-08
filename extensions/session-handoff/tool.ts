@@ -108,6 +108,7 @@ export async function executeSessionHandoffTool(
     title,
     model,
     approveProjectTrust: target.approveProjectTrust,
+    useDefaultSessionDir: target.useDefaultSessionDir ?? false,
     buildBootstrap: (sessionId) =>
       createChildGeneratedHandoffBootstrap({
         sessionId,

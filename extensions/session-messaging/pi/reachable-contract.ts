@@ -26,7 +26,8 @@ const REACHABLE_USER_SESSION_SCHEMA = Type.Object({
   cwd: Type.Optional(Type.String()),
   modifiedAt: Type.Optional(Type.String()),
   relation: Type.Optional(Type.String()),
-  state: Type.Union([Type.Literal("live"), Type.Literal("starting")]),
+  host: Type.Optional(Type.String()),
+  state: Type.Union([Type.Literal("live"), Type.Literal("starting"), Type.Literal("dormant")]),
 });
 
 const REACHABLE_SUBAGENT_SCHEMA = Type.Object({

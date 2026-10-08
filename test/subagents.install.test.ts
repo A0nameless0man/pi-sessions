@@ -889,6 +889,7 @@ function createDeps(
     settings: { subagents: { maxDepth, contextLimit } },
     index: { path: "/tmp/index.sqlite" },
     messaging,
+    sendMessage: messaging.sendMessage,
   } as never;
 }
 

@@ -9,6 +9,7 @@ import type {
   SendMessageRequest,
   SendMessageResult,
 } from "../session-messaging/install.ts";
+import type { SessionWaker } from "../session-messaging/message-router.ts";
 import {
   createSessionCancelTool,
   createSessionSendMessageTool,
@@ -43,7 +44,7 @@ import {
   type SubagentChildSessionState,
 } from "./settle.ts";
 import { shouldMessageSubagent } from "./should-message.ts";
-import { SubagentMessageRouter } from "./wake.ts";
+import { SubagentWaker } from "./wake.ts";
 
 const SUBAGENT_PROMPT_SECTION = "pi_sessions_subagent";
 const SUBAGENT_PROMPT = `You are working as a subagent on one task delegated by a parent session. The handoff defines your task. Work independently, stay within its scope, and do not duplicate work assigned to the parent or another subagent. Use the available tools to complete the task and validate your conclusions. Messages from the parent may refine the task or request a follow-up, but they do not replace your original task with unrelated work.`;
@@ -65,6 +66,7 @@ interface CurrentSubagentSession {
 
 export interface SubagentsHandle extends SessionLifecycle {
   roster: SubagentRoster;
+  waker: SessionWaker;
   getLaunchTargets(): readonly HandoffLaunchTarget[];
   sendMessage(request: SendMessageRequest): Promise<SendMessageResult>;
   cancelSession(sessionId: string): Promise<SubagentCancelResult>;
@@ -79,6 +81,8 @@ export function installSubagents(
     settings: SessionSettings;
     messaging: MessagingHandle;
     readCompactionSettings: (cwd: string) => CompactionThresholdSettings;
+    sendMessage(request: SendMessageRequest): Promise<SendMessageResult>;
+    hasHostedSessions?: () => boolean;
   },
 ): SubagentsHandle {
   pi.registerMessageRenderer(SUBAGENT_REPORT_MESSAGE_CUSTOM_TYPE, renderSubagentReportMessage);
@@ -107,18 +111,12 @@ export function installSubagents(
     reconcile: () => reconciler.reconcile(),
     openSession: openRosterSession,
   });
-  const messageRouter = new SubagentMessageRouter(
-    pi,
-    deps.messaging,
-    () => current?.parent,
-    isCurrentSession,
-    {
-      onMaterialize: (launch) => pi.appendEntry(SUBAGENT_LAUNCHED_CUSTOM_TYPE, launch),
-      afterOwnedSend: async () => {
-        await reconciler.reconcile();
-      },
+  const waker = new SubagentWaker(pi, deps.messaging, () => current?.parent, isCurrentSession, {
+    onMaterialize: (launch) => pi.appendEntry(SUBAGENT_LAUNCHED_CUSTOM_TYPE, launch),
+    afterSend: async () => {
+      await reconciler.reconcile();
     },
-  );
+  });
   const cancellationRouter = new SubagentCancellationRouter(
     pi,
     deps.messaging,
@@ -232,6 +230,7 @@ export function installSubagents(
     pi.registerTool(
       createSessionSendMessageTool(handle, {
         role: isSubagent ? { kind: "subagent" } : { kind: "wakeCapable" },
+        hostedSessions: deps.hasHostedSessions?.() ?? false,
         getCachedRelationTo: deps.messaging.getCachedRelationTo,
         getParentSessionId: () => handle.getParentSessionId(),
       }),
@@ -257,7 +256,8 @@ export function installSubagents(
 
   const handle: SubagentsHandle = {
     roster,
-    sendMessage: (request) => messageRouter.sendMessage(request),
+    waker,
+    sendMessage: deps.sendMessage,
     cancelSession: (sessionId) => cancellationRouter.cancelSession(sessionId),
     shouldMessageSubagent: (sessionId) =>
       shouldMessageSubagent(sessionId, {

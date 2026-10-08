@@ -20,6 +20,9 @@ describe("deferred launch backend", () => {
     const backend = createDeferredLaunchBackend({ copyToClipboard: true });
 
     const outcome = await backend.launch({
+      sessionId: "child-1",
+      sessionFile: "/tmp/child-1.jsonl",
+      model: "openai/gpt-5.4",
       cwd: "/tmp/project",
       title: "Session handoff",
       resumeCommand: "RESUME child-1",
@@ -33,6 +36,9 @@ describe("deferred launch backend", () => {
     const backend = createDeferredLaunchBackend({ copyToClipboard: false });
 
     const outcome = await backend.launch({
+      sessionId: "child-1",
+      sessionFile: "/tmp/child-1.jsonl",
+      model: "openai/gpt-5.4",
       cwd: "/tmp/project",
       title: "Session handoff",
       resumeCommand: "RESUME child-1",
@@ -47,6 +53,9 @@ describe("deferred launch backend", () => {
     const backend = createDeferredLaunchBackend({ copyToClipboard: true });
 
     const outcome = await backend.launch({
+      sessionId: "child-1",
+      sessionFile: "/tmp/child-1.jsonl",
+      model: "openai/gpt-5.4",
       cwd: "/tmp/project",
       title: "Session handoff",
       resumeCommand: "RESUME child-1",

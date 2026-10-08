@@ -110,6 +110,8 @@ The `session_handoff` tool lets the agent create a child session with a self-con
 
 Directional launches use tmux when the current terminal is inside tmux, or Ghostty on macOS. Deferred launches create the child without starting it and copy its resume command to the clipboard. A background subagent runs in a detached tmux window and reports back when finished; note that subagents are started with `--approve`, meaning pi will always start in the directory as trusted.
 
+When an external host registers, its name replaces all directional launch values, even inside tmux or Ghostty. Deferred and subagent launches remain available. External-host children start automatically without draft review; their resume commands also carry `--approve`.
+
 Run `/handoff` to open the **Handoffs** board. The Subagents and User sessions tabs show status, age, launch details, and the actions currently available: stop, copy an observation command, or copy a resume command.
 
 ## Session Messaging
@@ -120,7 +122,61 @@ Agents can coordinate with live Pi sessions and their own subagents:
 - `session_send_message` sends a message to a live session or own subagent
 - `session_cancel` aborts another live session's current turn
 
-Incoming messages start the recipient agent when idle and steer it when already running. Messaging a dormant owned subagent resumes it automatically; other inactive sessions cannot receive messages, but you can still use `session_search` and `session_ask` with them.
+Incoming messages start the recipient agent when idle and steer it when already running. Messaging a dormant owned subagent or a dormant session listed by a wake-capable host resumes it automatically. Hosted sessions appear in `session_reachable` with a `host` field and a broker-derived `live`, `starting`, or `dormant` state. Other inactive sessions cannot receive messages, but you can still use `session_search` and `session_ask` with them.
+
+## Host extension API (v1)
+
+A host controls where user-facing handoff children run. Built-in hosts launch tmux splits, Ghostty splits, or deferred resume commands. External extensions register over `pi.events`; neither extension imports the other.
+
+Install a listener during extension initialization, **not** in your `session_start` handler:
+
+```ts
+pi.events.on("pi-sessions:hosts:v1", (request) => {
+  const { register } = request as HostRegistrationRequest;
+  register({ name: "swb", launch, listSessions, wake });
+});
+```
+
+The structural types below are the public contract; copy them into your extension or define compatible types locally:
+
+```ts
+interface HostRegistrationRequest {
+  register(host: Host): void;
+}
+
+interface Host {
+  name: string;
+  launch(input: HostLaunchInput): Promise<HostLaunchResult>;
+  listSessions?(): Promise<HostSession[]>;
+  wake?(sessionId: string): Promise<void>;
+}
+
+interface HostLaunchInput {
+  sessionId: string;
+  sessionFile: string;
+  cwd: string;
+  title: string;
+  model: string;
+  resumeCommand: string;
+}
+
+type HostLaunchResult =
+  | { success: true; clipboardStatus?: "copied" | "failed" }
+  | { success: false; error: string };
+
+interface HostSession {
+  sessionId: string;
+  cwd: string;
+  title: string;
+}
+```
+
+- **Registration:** pi-sessions emits `pi-sessions:hosts:v1` at each `session_start`, including reloads and session switches. Call `register` synchronously, before returning or awaiting anything. Registration freezes when `emit` returns; late calls throw. Names must match `[a-z][a-z0-9-]*`, be unique, and cannot be `left`, `right`, `up`, `down`, `deferred`, `subagent`, `tmux`, or `ghostty`. Registration and callback results are validated with TypeBox. Multiple external hosts are offered in registration order; any external host suppresses all split targets. Without one, precedence remains tmux, then Ghostty, then deferred. Subagent availability still depends on tmux installation and delegation depth.
+- **Launch:** the child file, lineage, title, and automatic bootstrap are durable before `launch` runs. External-host children always use Pi's default session directory for `cwd`, even when the parent uses a custom directory. Start interactive Pi in that cwd with `--session-id`, `--approve`, and `--model` using the supplied `model` (including its thinking suffix, such as `provider/model:high`), or execute `resumeCommand`. Preserve the same Pi agent directory and load pi-sessions in the child. Do not inject a second initial prompt. Return `{ success: true }` after starting the process; return `{ success: false, error }` or throw on failure. The tool surfaces the surviving child's resume command on failure. `clipboardStatus` is used by the deferred host; external hosts normally omit it.
+- **Discovery:** `listSessions()` returns all open user-facing sessions this host can wake, whether running or dormant. Exclude closed sessions and subagents. It is called on demand by `session_reachable` and dormant-message routing, not polled in the background. Return unique session IDs; competing host ownership is an error. Hosts without both `listSessions` and `wake` do not contribute dormant reachability. `wake` without `listSessions` is invalid.
+- **Wake:** `wake(sessionId)` starts or resumes an owned session and resolves with no value; throw on failure. It must be idempotent across callers because different Pi processes can wake the same target concurrently. Within one sender, concurrent wakes are coalesced. After it resolves, pi-sessions waits **30 seconds** for broker registration before delivering. It retries wake/delivery once if the target disconnects before acceptance, but does not restart a host session on registration timeout. The broker alone supplies liveness; do not wait for broker readiness inside `wake`. Host callbacks have no imposed timeout: bound your own I/O. Built-in split launch commands use a 15-second timeout; subagent stale-window recovery retains two 30-second registration waits.
+
+Subagents are not hosts. They retain parent-owned tmux windows, automatic approval, their own ledger, and their own wake/recovery policy. `/handoff` remains a receipt board; it accepts external-host launch receipts but does not provide a separate launch picker or wake action.
 
 ## Session picker
 

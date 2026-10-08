@@ -22,6 +22,7 @@ export function prepareHandoffLaunch(options: {
   title: string;
   model: string | undefined;
   approveProjectTrust: boolean;
+  useDefaultSessionDir?: boolean;
   buildBootstrap: (sessionId: string) => HandoffBootstrap;
   prepareChild?: ((manager: SessionManager, sessionId: string) => void) | undefined;
 }): PreparedHandoff {
@@ -31,7 +32,7 @@ export function prepareHandoffLaunch(options: {
   const sameCwd = options.targetCwd === options.parentCwd;
   const manager = SessionManager.create(
     options.targetCwd,
-    sameCwd ? options.parentSessionDir : undefined,
+    sameCwd && !options.useDefaultSessionDir ? options.parentSessionDir : undefined,
     { parentSession: options.parentSessionFile },
   );
   manager.appendSessionInfo(options.title);

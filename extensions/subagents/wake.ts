@@ -1,5 +1,5 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { SendMessageRequest, SendMessageResult } from "../session-messaging/install.ts";
+import type { SessionWaker, WakeMessaging } from "../session-messaging/message-router.ts";
 import {
   createTmuxWindow,
   killTmuxWindow,
@@ -9,125 +9,60 @@ import {
 } from "../shared/tmux.ts";
 import { findOwnedSubagentLaunch, type SubagentLaunched } from "./ledger.ts";
 
-const SESSION_READY_TIMEOUT_MS = 30_000;
-
 export interface WakeParentSession {
   sessionId: string;
   epoch: number;
   getBranch(): readonly SessionEntry[];
 }
 
-interface WakeMessaging {
-  sendMessage(request: SendMessageRequest): Promise<SendMessageResult>;
-  listSessions(): Promise<string[]>;
-  waitForSession(sessionId: string, timeoutMs: number): Promise<boolean>;
-}
-
-export interface SubagentMessageRouterOptions {
-  readyTimeoutMs?: number;
-  onMaterialize?(launch: SubagentLaunched): void;
-  afterOwnedSend?(): Promise<void> | void;
-}
-
-export class SubagentMessageRouter {
-  private readonly wakeBySessionId = new Map<string, Promise<void>>();
-
+export class SubagentWaker implements SessionWaker {
   constructor(
     private readonly executor: TmuxExecutor,
     private readonly messaging: WakeMessaging,
     private readonly getParent: () => WakeParentSession | undefined,
     private readonly isCurrent: (epoch: number) => boolean,
-    private readonly options: SubagentMessageRouterOptions = {},
+    private readonly options: {
+      onMaterialize?(launch: SubagentLaunched): void;
+      afterSend?(): Promise<void> | void;
+    } = {},
   ) {}
 
-  async sendMessage(request: SendMessageRequest): Promise<SendMessageResult> {
-    let failedLiveSend: SendMessageResult | undefined;
-    if (await this.isLive(request.target)) {
-      const result = await this.messaging.sendMessage(request);
-      if (result.delivered || !isTargetDeparture(result)) {
-        return result;
-      }
-      failedLiveSend = result;
-    }
-
+  owns(target: string): boolean {
     const parent = this.getParent();
-    const launch = parent
-      ? findOwnedSubagentLaunch(parent.getBranch(), parent.sessionId, request.target)
-      : undefined;
-    if (!parent || !launch) {
-      return failedLiveSend ?? this.messaging.sendMessage(request);
-    }
-
-    try {
-      await this.wake(parent, launch);
-      const result = await this.sendOwned(parent, request);
-      if (result.delivered || !isTargetDeparture(result)) {
-        return result;
-      }
-
-      await this.wake(parent, launch);
-      return this.sendOwned(parent, request);
-    } finally {
-      await this.options.afterOwnedSend?.();
-    }
+    return Boolean(parent && findOwnedSubagentLaunch(parent.getBranch(), parent.sessionId, target));
   }
 
-  private async wake(parent: WakeParentSession, launch: SubagentLaunched): Promise<void> {
-    const existing = this.wakeBySessionId.get(launch.childSessionId);
-    if (existing) {
-      return existing;
-    }
-
-    const wake = this.ensureReady(parent, launch).finally(() => {
-      if (this.wakeBySessionId.get(launch.childSessionId) === wake) {
-        this.wakeBySessionId.delete(launch.childSessionId);
-      }
-    });
-    this.wakeBySessionId.set(launch.childSessionId, wake);
-    return wake;
-  }
-
-  private async ensureReady(parent: WakeParentSession, launch: SubagentLaunched): Promise<void> {
-    if (await this.isLive(launch.childSessionId)) {
-      return;
-    }
-
+  async wake(target: string): Promise<void> {
+    const { parent, launch } = this.resolve(target);
     const tmuxSession = tmuxSessionName(parent.sessionId);
     const hasWindow = (await listTmuxWindows(this.executor, tmuxSession)).some(
-      (window) => window.piSessionId === launch.childSessionId,
+      (window) => window.piSessionId === target,
     );
+    if (!hasWindow) await this.createWindow(parent, launch, tmuxSession);
+  }
 
-    if (!hasWindow) {
-      await this.createWindow(parent, launch, tmuxSession);
-    }
-    if (
-      await this.messaging.waitForSession(
-        launch.childSessionId,
-        this.options.readyTimeoutMs ?? SESSION_READY_TIMEOUT_MS,
-      )
-    ) {
-      return;
-    }
-
-    this.requireCurrent(parent);
-    const killed = await killTmuxWindow(this.executor, tmuxSession, launch.childSessionId);
+  async restart(target: string): Promise<void> {
+    const { parent, launch } = this.resolve(target);
+    const tmuxSession = tmuxSessionName(parent.sessionId);
+    const killed = await killTmuxWindow(this.executor, tmuxSession, target);
     if (!killed) {
       throw new Error(
-        `Subagent ${launch.childSessionId} did not register and its stale tmux window could not be stopped.`,
+        `Subagent ${target} did not register and its stale tmux window could not be stopped.`,
       );
     }
-
     await this.createWindow(parent, launch, tmuxSession);
-    if (
-      !(await this.messaging.waitForSession(
-        launch.childSessionId,
-        this.options.readyTimeoutMs ?? SESSION_READY_TIMEOUT_MS,
-      ))
-    ) {
-      throw new Error(
-        `Subagent ${launch.childSessionId} was restarted but did not register for messaging.`,
-      );
-    }
+  }
+
+  afterSend(): Promise<void> | void {
+    return this.options.afterSend?.();
+  }
+
+  private resolve(target: string): { parent: WakeParentSession; launch: SubagentLaunched } {
+    const parent = this.getParent();
+    const launch = parent && findOwnedSubagentLaunch(parent.getBranch(), parent.sessionId, target);
+    if (!parent || !launch) throw new Error(`No owned subagent ${target}.`);
+    this.requireCurrent(parent);
+    return { parent, launch };
   }
 
   private async createWindow(
@@ -135,9 +70,7 @@ export class SubagentMessageRouter {
     launch: SubagentLaunched,
     tmuxSession: string,
   ): Promise<void> {
-    if (await this.isLive(launch.childSessionId)) {
-      return;
-    }
+    if ((await this.messaging.listSessions()).includes(launch.childSessionId)) return;
     this.requireCurrent(parent);
     this.options.onMaterialize?.(launch);
     await createTmuxWindow(this.executor, {
@@ -149,25 +82,8 @@ export class SubagentMessageRouter {
     });
   }
 
-  private sendOwned(
-    parent: WakeParentSession,
-    request: SendMessageRequest,
-  ): Promise<SendMessageResult> {
-    this.requireCurrent(parent);
-    return this.messaging.sendMessage(request);
-  }
-
-  private async isLive(sessionId: string): Promise<boolean> {
-    return (await this.messaging.listSessions()).includes(sessionId);
-  }
-
   private requireCurrent(parent: WakeParentSession): void {
-    if (!this.isCurrent(parent.epoch)) {
+    if (!this.isCurrent(parent.epoch))
       throw new Error("The parent session changed while waking its subagent.");
-    }
   }
-}
-
-function isTargetDeparture(result: SendMessageResult): boolean {
-  return !result.delivered && (result.reason === "no_session" || result.reason === "disconnected");
 }

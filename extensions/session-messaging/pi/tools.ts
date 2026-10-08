@@ -53,6 +53,7 @@ export type SessionSendMessageRole =
 
 export interface SessionSendMessageToolOptions {
   role: SessionSendMessageRole;
+  hostedSessions?: boolean;
   getCachedRelationTo(sessionId: string | undefined): string | undefined;
   /**
    * Resolved on every call: subagent identity depends on the active branch, so a rewind can
@@ -119,7 +120,14 @@ export function createSessionSendMessageTool(
     label: "Send Message to Session",
     description,
     promptSnippet,
-    promptGuidelines,
+    promptGuidelines: [
+      ...promptGuidelines,
+      ...(options.hostedSessions
+        ? [
+            "session_reachable also lists dormant hosted sessions; sending a message wakes them automatically.",
+          ]
+        : []),
+    ],
     parameters: SEND_MESSAGE_PARAMS,
     renderCall(args, theme, context) {
       const state = context.state as SendMessageRendererState;

@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## Unreleased
+
+### Added
+
+- External hosts can register over `pi-sessions:hosts:v1` to launch user-facing handoffs, list open sessions, and wake dormant sessions on message delivery. External hosts replace split launch targets; deferred launches and parent-owned subagents remain separate.
+
 ## [0.14.3] - 2026-10-08
 
 ### Fixed

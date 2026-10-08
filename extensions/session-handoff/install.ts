@@ -2,6 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import type { Host } from "../hosts/contract.ts";
 import type { IndexHandle, SessionLifecycle } from "../shared/composition.ts";
 import type { ModelRuntimeProvider } from "../shared/model-runtime.ts";
 import { isTuiMode } from "../shared/pi-mode.ts";
@@ -46,6 +47,7 @@ export function installHandoff(
     index: IndexHandle;
     getModelRuntime: ModelRuntimeProvider;
     getLaunchTargets?: (() => readonly HandoffLaunchTarget[]) | undefined;
+    getHosts?: () => readonly Host[];
     board: HandoffBoardServices;
   },
 ): SessionLifecycle {
@@ -197,7 +199,7 @@ export function installHandoff(
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
-    if (splitBackend?.identifyTerminalId && ctx) {
+    if (!deps.getHosts?.().length && splitBackend?.identifyTerminalId && ctx) {
       identifiedGhosttyTerminalId =
         (await splitBackend.identifyTerminalId(ctx.cwd)) ?? identifiedGhosttyTerminalId;
     }
@@ -215,6 +217,7 @@ export function installHandoff(
           splitBackend,
           copyDeferredToClipboard: settings.handoff.deferred.copyToClipboard,
           additionalTargets: deps.getLaunchTargets?.() ?? [],
+          hosts: deps.getHosts?.() ?? [],
         }),
         resolveHandoffRoster({
           models,

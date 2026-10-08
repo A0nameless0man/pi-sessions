@@ -49,6 +49,9 @@ describe("tmux handoff launch", () => {
 
     await expect(
       backend.launch({
+        sessionId: "child-1",
+        sessionFile: "/tmp/child-1.jsonl",
+        model: "openai/gpt-5.4",
         cwd: "/tmp/project with spaces",
         title: "Inspect worker",
         resumeCommand: "pi --session-id 'child-1'",
@@ -67,6 +70,9 @@ describe("tmux handoff launch", () => {
 
     await expect(
       createTmuxSplitLaunchBackend(pi as never, "right").launch({
+        sessionId: "child-1",
+        sessionFile: "/tmp/child-1.jsonl",
+        model: "openai/gpt-5.4",
         cwd: "/tmp/project",
         title: "Worker",
         resumeCommand: "pi --session-id child-1",

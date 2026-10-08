@@ -5,6 +5,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import type { HostedSession } from "../../hosts/contract.ts";
 import { isSessionStarting } from "../../session-handoff/metadata.ts";
 import { formatError } from "../../shared/errors.ts";
 import { ExpandableContentLayout } from "../../shared/rendering/expandable-content-layout.ts";
@@ -46,7 +47,9 @@ export interface ReachableSubagentEntry {
 
 export interface SessionReachableDeps {
   indexPath: string;
+  hostedSessions?: boolean;
   listSessions(): Promise<string[]>;
+  listHostedSessions?: () => Promise<HostedSession[]>;
   getRelationTo(sessionId: string): string | undefined;
   listSubagents?:
     | ((
@@ -75,6 +78,11 @@ export function createSessionReachableTool(deps: SessionReachableDeps): ToolDefi
       : "List addressable live sessions",
     promptGuidelines: [
       "Before session_send_message, use session_reachable to find the target session id.",
+      ...(deps.hostedSessions
+        ? [
+            "User sessions include dormant hosted sessions. session_send_message wakes them automatically; the host field identifies their host.",
+          ]
+        : []),
     ],
     annotations: { readOnlyHint: true, openWorldHint: false },
     parameters: subagentsAvailable ? SESSION_REACHABLE_PARAMS : SESSION_REACHABLE_USER_PARAMS,
@@ -129,7 +137,11 @@ async function listReachableUserSessions(
   }
 
   const parentSessionId = deps.getParentSessionId?.();
-  const targetIds = liveSessionIds.filter(
+  const hostedSessions = new Map(
+    ((await deps.listHostedSessions?.()) ?? []).map((session) => [session.sessionId, session]),
+  );
+  const liveIds = new Set(liveSessionIds);
+  const targetIds = [...new Set([...liveSessionIds, ...hostedSessions.keys()])].filter(
     (sessionId) => sessionId !== currentSessionId && sessionId !== parentSessionId,
   );
   return withSessionIndex(deps.indexPath, { mode: "read", required: true }, ({ db }) => {
@@ -140,12 +152,20 @@ async function listReachableUserSessions(
         continue;
       }
       const relation = deps.getRelationTo(sessionId);
+      const hosted = hostedSessions.get(sessionId);
+      const title = hosted?.title ?? row?.sessionName;
+      const cwd = hosted?.cwd ?? row?.cwd;
       sessions.push({
         kind: "user",
         sessionId,
-        state: row && isStartingSession(row) ? "starting" : "live",
-        ...(row?.sessionName ? { title: row.sessionName } : {}),
-        ...(row?.cwd ? { cwd: row.cwd } : {}),
+        state: !liveIds.has(sessionId)
+          ? "dormant"
+          : row && isStartingSession(row)
+            ? "starting"
+            : "live",
+        ...(hosted ? { host: hosted.host } : {}),
+        ...(title ? { title } : {}),
+        ...(cwd ? { cwd } : {}),
         ...(row?.modifiedAt ? { modifiedAt: row.modifiedAt } : {}),
         ...(relation === undefined ? {} : { relation }),
       });

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SendMessageResult } from "../extensions/session-messaging/install.ts";
+import { MessageRouter } from "../extensions/session-messaging/message-router.ts";
 import { SUBAGENT_LAUNCHED_CUSTOM_TYPE } from "../extensions/subagents/ledger.ts";
-import { SubagentMessageRouter } from "../extensions/subagents/wake.ts";
+import { SubagentWaker } from "../extensions/subagents/wake.ts";
 
 const parentId = "12345678-1234-1234-1234-123456789abc";
 const childId = "87654321-1234-1234-1234-123456789abc";
@@ -135,13 +136,14 @@ function createRouter(
     epoch: 4,
     getBranch: () => [launchEntry()],
   };
-  return new SubagentMessageRouter(
+  const waker = new SubagentWaker(
     tmux as never,
     messaging,
     () => parent as never,
     (epoch) => epoch === 4,
-    { readyTimeoutMs: 25, ...(afterOwnedSend ? { afterOwnedSend } : {}) },
+    { ...(afterOwnedSend ? { afterSend: afterOwnedSend } : {}) },
   );
+  return new MessageRouter(messaging, [waker], () => 4, 25);
 }
 
 function createMessaging(options: { live?: string[]; waits?: boolean[] } = {}) {

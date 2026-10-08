@@ -1,6 +1,8 @@
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import type { ClipboardStatus, HandoffSplitDirection, LaunchBackend } from "./launch/backend.ts";
+import type { Host } from "../hosts/contract.ts";
+import { formatError } from "../shared/errors.ts";
+import type { ClipboardStatus } from "./launch/backend.ts";
 import type { HandoffSubagent } from "./metadata.ts";
 import type { PreparedHandoff } from "./spawn.ts";
 
@@ -15,10 +17,9 @@ export const HANDOFF_DIRECTION_LAUNCH_SCHEMA = Type.Union([
   Type.Literal("down"),
 ]);
 
-export const HANDOFF_NON_SUBAGENT_LAUNCH_SCHEMA = Type.Union([
-  HANDOFF_DIRECTION_LAUNCH_SCHEMA,
-  Type.Literal(DEFERRED_LAUNCH),
-]);
+export const HANDOFF_NON_SUBAGENT_LAUNCH_SCHEMA = Type.String({
+  pattern: "^(?!subagent$)[a-z][a-z0-9-]*$",
+});
 
 export const HANDOFF_LAUNCH_VALUE_SCHEMA = Type.Union([
   HANDOFF_NON_SUBAGENT_LAUNCH_SCHEMA,
@@ -49,7 +50,7 @@ export type HandoffLaunchTargetOutcome =
   | {
       success: true;
       backend: string;
-      clipboardStatus?: ClipboardStatus | undefined;
+      clipboardStatus?: ClipboardStatus;
     }
   | { success: false; error: string };
 
@@ -61,6 +62,7 @@ export interface HandoffLaunchTarget {
   bootstrapMode: "review" | "automatic";
   /** Unattended children skip the startup trust prompt; watched ones let the user answer it. */
   approveProjectTrust: boolean;
+  useDefaultSessionDir?: boolean;
   /** Subagent launches stamp their child's identity into the child bootstrap. */
   describeSubagentChild?(input: {
     childSessionId: string;
@@ -72,23 +74,33 @@ export interface HandoffLaunchTarget {
 }
 
 export function createBackendLaunchTarget(
-  value: HandoffSplitDirection | "deferred",
-  backend: LaunchBackend,
+  value: string,
+  host: Host,
   description?: string | undefined,
+  external = false,
 ): HandoffLaunchTarget {
   return {
     value,
     ...(description ? { description } : {}),
     requestResponseDefault: false,
-    bootstrapMode: "review",
-    approveProjectTrust: false,
+    bootstrapMode: external ? "automatic" : "review",
+    approveProjectTrust: external,
+    useDefaultSessionDir: external,
     prepareChild() {},
-    launch(input) {
-      return backend.launch({
-        cwd: input.cwd,
-        title: input.title,
-        resumeCommand: input.prepared.resumeCommand,
-      });
+    async launch(input) {
+      try {
+        const result = await host.launch({
+          sessionId: input.prepared.sessionId,
+          sessionFile: input.prepared.sessionFile,
+          cwd: input.cwd,
+          title: input.title,
+          model: input.model,
+          resumeCommand: input.prepared.resumeCommand,
+        });
+        return result.success ? { ...result, backend: host.name } : result;
+      } catch (error) {
+        return { success: false, error: formatError(error) };
+      }
     },
   };
 }
