@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.14.3] - 2026-10-08
+
+### Fixed
+
+- A dormant subagent woken by a message now always has `submit_task_report` available. Before, the message could start its turn before the session finished starting up, so the subagent couldn't answer with the report tool.
+
 ## [0.14.2] - 2026-10-08
 
 ### Fixed
