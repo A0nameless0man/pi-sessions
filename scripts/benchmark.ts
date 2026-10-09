@@ -53,8 +53,10 @@ try {
   process.env.PI_SESSIONS_MESSAGING_DIR = join(root, "broker");
   process.env.PI_OFFLINE = "1";
   const { listSessionFiles } = await import("../extensions/session-search/extract.ts");
-  const { rebuildSessionIndex } = await import("../extensions/session-search/reindex.ts");
-  const { createSessionHookController } = await import("../extensions/session-search/hooks.ts");
+  const { rebuildSessionIndex } = await import("../extensions/shared/session-index/recovery.ts");
+  const { createSessionHookController } = await import(
+    "../extensions/shared/session-index/sync.ts"
+  );
   const { openIndexDatabase, searchSessions } = await import(
     "../extensions/shared/session-index/index.ts"
   );

@@ -10,6 +10,8 @@ import {
 } from "./launch-target.ts";
 
 export const HANDOFF_METADATA_CUSTOM_TYPE = "pi-sessions.handoff";
+// Agent Switchboard's swb adopt (packages/cli/src/commands/adopt.ts) reads this
+// customType and data.subagent; renaming either breaks its subagent check.
 export const HANDOFF_BOOTSTRAP_PENDING_CUSTOM_TYPE = "pi-sessions.handoff-bootstrap";
 export const HANDOFF_BOOTSTRAP_CONSUMED_CUSTOM_TYPE = "pi-sessions.handoff-bootstrap-consumed";
 export const HANDOFF_BOOTSTRAP_FAILED_CUSTOM_TYPE = "pi-sessions.handoff-bootstrap-failed";

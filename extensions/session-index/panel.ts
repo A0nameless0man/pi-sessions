@@ -6,6 +6,7 @@ import {
   type TuiMouseEventResult,
   truncateToWidth,
   visibleWidth,
+  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { type LegendHit, LegendPointer, layoutLegend, legendHitAt } from "../shared/legend.ts";
 import type { SessionIndexStatus } from "../shared/session-index/index.ts";
@@ -73,6 +74,14 @@ export class SessionIndexPanel implements Focusable {
     lines.push(
       this.renderRow(innerWidth, ` Last full reindex: ${this.status.lastFullReindexAt ?? "n/a"}`),
     );
+    if (this.status.recoveryMessage) {
+      for (const line of wrapTextWithAnsi(
+        this.status.recoveryMessage,
+        Math.max(1, innerWidth - 2),
+      )) {
+        lines.push(this.renderRow(innerWidth, ` ${this.theme.fg("warning", line)}`));
+      }
+    }
     lines.push(this.renderRow(innerWidth, ""));
     this.renderAction(lines, innerWidth, "R", "rebuild from disk", () => this.done("reindex"));
     this.renderAction(lines, innerWidth, "Enter / Esc", "close", () => this.done(undefined));

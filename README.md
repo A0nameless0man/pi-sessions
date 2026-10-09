@@ -51,9 +51,8 @@ pi -e /absolute/path/to/pi-sessions
 ## Quick start
 
 1. Install the package.
-2. Open Pi and run `/session-index`.
-3. Press `r` to build the index for all your prior sessions.
-4. Try the main flows:
+2. Open Pi. Your prior sessions are indexed automatically in the background.
+3. Try the main flows:
 
 ```text
 What session did I implement the db layer?
@@ -75,7 +74,7 @@ Open the frontend implementation task in a session to the right.
 | Session Index      | `/session-index` slash command                                         | Shows index status and rebuilds the local session index |
 | Session Auto Title | in background, `/title` slash command                                  | Give sessions titles                                    |
 
-Every feature is on by default. Turn one off with `enable: false` under its own settings namespace, which unregisters its tools and hooks.
+Every feature is on by default. Turn one off with `enable: false` under its own settings namespace. Index recovery and startup/switch sync always run, including when search is disabled. `hooks.enable` controls turn, tree, and compaction sync, not startup recovery.
 
 ```json
 {
@@ -230,12 +229,11 @@ Subagents require the handoff and messaging features. Limit recursive delegation
 
 ## Session Index
 
-By default, `pi-sessions` will start indexing all conversations moving forward. If you want to backfill all prior conversations:
+The index is a shared cache of your transcripts, used by search, messaging, and the other session features. Pi checks transcripts at startup and syncs files that changed, including sessions run without pi-sessions loaded. Missing, older-schema, or unreadable indexes rebuild automatically in the background; unreadable databases are moved aside rather than overwritten. A malformed transcript is skipped and reported.
 
-- run `/session-index`
-- hit `r` to (re)index everything
+During recovery, a tool may say "Session indexing in progress; try again shortly." Only one process rebuilds at a time, and readers retain the old index until its replacement is ready. Failed attempts share a backoff of 1 minute, then 5 minutes, then 30 minutes. `/session-index` shows status; press `r` to rebuild now, ignoring the backoff.
 
-this is idempotent, so if you run into any issues, or disable pi-sessions for a while, feel free to re-index to see if that resolves anything.
+If another Pi writes a newer index schema, the older process stops using the index and displays "pi-sessions was updated; /reload to use it". Reload instead of rebuilding: older code cannot replace a newer schema.
 
 By default the index lives at:
 

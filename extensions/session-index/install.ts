@@ -1,15 +1,24 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { type ReindexResult, rebuildSessionIndex } from "../session-search/reindex.ts";
-import type { IndexHandle } from "../shared/composition.ts";
+import type { IndexHandle, SessionLifecycle } from "../shared/composition.ts";
 import { isTuiMode } from "../shared/pi-mode.ts";
 import { getIndexStatus } from "../shared/session-index/index.ts";
+import {
+  getIndexRecoveryMessage,
+  observeIndexRecovery,
+  type ReindexResult,
+  rebuildSessionIndex,
+} from "../shared/session-index/recovery.ts";
 import type { SessionSettings } from "../shared/settings.ts";
 
 import { ReindexLoader } from "./loader.ts";
 import { type SessionIndexAction, SessionIndexPanel } from "./panel.ts";
 
-export function installIndex(pi: ExtensionAPI, deps: { settings: SessionSettings }): IndexHandle {
+export function installIndex(
+  pi: ExtensionAPI,
+  deps: { settings: SessionSettings },
+): IndexHandle & SessionLifecycle {
   const indexPath = deps.settings.index.path;
+  let lastNotice: string | undefined;
 
   pi.registerCommand("session-index", {
     description: "Open the session index control panel",
@@ -20,6 +29,7 @@ export function installIndex(pi: ExtensionAPI, deps: { settings: SessionSettings
       }
 
       const status = getIndexStatus(indexPath);
+      status.recoveryMessage = getIndexRecoveryMessage(indexPath);
       const action = await ctx.ui.custom<SessionIndexAction>(
         (tui, theme, _keybindings, done) =>
           new SessionIndexPanel(theme, status, done, () => tui.requestRender()),
@@ -59,7 +69,18 @@ export function installIndex(pi: ExtensionAPI, deps: { settings: SessionSettings
     },
   });
 
-  return { path: indexPath };
+  return {
+    path: indexPath,
+    onSessionStart(_event, ctx) {
+      observeIndexRecovery(indexPath, (message) => {
+        ctx.ui.setStatus("session-index", message);
+        if (message && message !== lastNotice && !message.includes("in progress")) {
+          ctx.ui.notify(message, "error");
+        }
+        lastNotice = message;
+      });
+    },
+  };
 }
 
 async function runReindexWithLoader(

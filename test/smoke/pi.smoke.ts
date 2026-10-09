@@ -9,6 +9,8 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  watch,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,8 +23,12 @@ import { Type } from "typebox";
 import { expect, test } from "vitest";
 import { HANDOFF_TOOL_DETAILS_SCHEMA } from "../../extensions/session-handoff/tool-contract.ts";
 import {
+  getMetadata,
+  INDEX_SCHEMA_VERSION,
   initializeSchema,
   openIndexDatabase,
+  type SessionIndexDatabase,
+  setMetadata,
 } from "../../extensions/shared/session-index/index.ts";
 import { isRecord } from "../../extensions/shared/text.ts";
 import { parseTypeBoxValue } from "../../extensions/shared/typebox.ts";
@@ -63,12 +69,27 @@ class RpcSession {
   readonly child: ChildProcessWithoutNullStreams;
   private failure: Error | undefined;
 
-  constructor(cwd: string, env: NodeJS.ProcessEnv, sessionId: string, log: string) {
-    this.child = spawn("pi", ["--offline", "--mode", "rpc", "--session-id", sessionId], {
-      cwd,
-      env,
-      stdio: "pipe",
-    });
+  constructor(
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+    sessionId: string,
+    log: string,
+    sessionFile?: string,
+  ) {
+    this.child = spawn(
+      "pi",
+      [
+        "--offline",
+        "--mode",
+        "rpc",
+        ...(sessionFile ? ["--session", sessionFile] : ["--session-id", sessionId]),
+      ],
+      {
+        cwd,
+        env,
+        stdio: "pipe",
+      },
+    );
     this.child.on("error", (error) => {
       this.failure = error;
     });
@@ -102,7 +123,7 @@ class RpcSession {
     }
   }
 
-  async tool(name: string, args: Record<string, unknown>) {
+  async tool(name: string, args: Record<string, unknown>, isError = false) {
     const start = this.events.length;
     this.send({ type: "prompt", message: JSON.stringify({ tool: name, args }) });
     const event = await waitFor(name, () => {
@@ -111,7 +132,7 @@ class RpcSession {
         .slice(start)
         .find((item) => item.type === "tool_execution_end" && item.toolName === name);
     });
-    expect(event.isError, JSON.stringify(event)).toBe(false);
+    expect(event.isError, JSON.stringify(event)).toBe(isError);
     await waitFor(`${name} turn end`, () => {
       this.assertRunning();
       return this.events.slice(start).find((item) => item.type === "agent_end");
@@ -182,9 +203,6 @@ test.each([false, true])("real Pi integration (host: %s)", async (withHost) => {
       },
     }),
   );
-  const db = openIndexDatabase(join(agentDir, "pi-sessions/index.sqlite"));
-  initializeSchema(db);
-  db.close();
   const tmux = (...args: string[]) =>
     execFileSync("tmux", ["-S", socket, ...args], {
       cwd,
@@ -499,3 +517,168 @@ test.each([false, true])("real Pi integration (host: %s)", async (withHost) => {
     ),
   );
 });
+
+test.each(["fresh", "older", "newer", "failure"])(
+  "real Pi index recovery: %s",
+  async (scenario) => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ps-recovery-")));
+    const agentDir = join(root, "agent");
+    const cwd = join(root, "project");
+    const indexDir = join(agentDir, "pi-sessions");
+    const indexPath = join(indexDir, "index.sqlite");
+    const artifacts = join(packageRoot, ".mise/smoke", `${Date.now()}-recovery-${scenario}`);
+    const sessionsDir = join(agentDir, "sessions/project");
+    for (const directory of [cwd, indexDir, sessionsDir, artifacts])
+      mkdirSync(directory, { recursive: true });
+    const env = {
+      PATH: process.env.PATH,
+      HOME: root,
+      SHELL: "/bin/sh",
+      PI_OFFLINE: "1",
+      PI_CODING_AGENT_DIR: agentDir,
+      PI_SESSIONS_MESSAGING_DIR: join(root, "broker"),
+    };
+    writeFileSync(
+      join(agentDir, "settings.json"),
+      JSON.stringify({
+        packages: [packageRoot],
+        extensions: [join(packageRoot, "test/smoke/install.ts")],
+        defaultProvider: "smoke",
+        defaultModel: "scripted",
+        defaultThinkingLevel: "off",
+        sessions: {
+          search: { enable: false },
+          hooks: { enable: false },
+          ask: { enable: false },
+          handoff: { enable: false },
+          subagents: { enable: false },
+          autoTitle: { enable: false },
+        },
+      }),
+    );
+    const ids = [randomUUID(), randomUUID()];
+    const files = ids.map((id, i) => {
+      const file = join(sessionsDir, `${id}.jsonl`);
+      writeFileSync(
+        file,
+        `${JSON.stringify({ type: "session", version: 3, id, cwd, timestamp: new Date().toISOString() })}\n${JSON.stringify({ type: "session_info", id: `name-${i}`, parentId: null, timestamp: new Date().toISOString(), name: `Recovery peer ${i}` })}\n`,
+      );
+      return file;
+    });
+    let blocker: SessionIndexDatabase | undefined;
+    if (scenario !== "fresh") {
+      const db = openIndexDatabase(indexPath);
+      initializeSchema(db);
+      setMetadata(
+        db,
+        "schema_version",
+        String(INDEX_SCHEMA_VERSION + (scenario === "newer" ? 1 : -1)),
+      );
+      db.close();
+      if (scenario === "failure") {
+        blocker = openIndexDatabase(indexPath, { create: false });
+        blocker.exec("PRAGMA journal_mode = WAL");
+        blocker.exec("BEGIN IMMEDIATE");
+      }
+    }
+    const original = existsSync(indexPath) ? readFileSync(indexPath) : undefined;
+    const publications: number[] = [];
+    const watcher = watch(indexDir, (event, name) => {
+      if (event === "rename" && name === "index.sqlite" && existsSync(indexPath))
+        publications.push(statSync(indexPath).ino);
+    });
+    const sessions = ids.map(
+      (id, i) => new RpcSession(cwd, env, id, join(artifacts, `pi-${i}.jsonl`), files[i]),
+    );
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          waitFor("Pi ready", () =>
+            existsSync(join(agentDir, `${id}.ready.json`)) ? true : undefined,
+          ),
+        ),
+      );
+      for (const id of ids) {
+        const ready = JSON.parse(readFileSync(join(agentDir, `${id}.ready.json`), "utf8"));
+        expect(ready.tools).not.toContain("session_search");
+      }
+      if (scenario === "newer") {
+        await Promise.all(sessions.map((session) => session.tool("session_reachable", {}, true)));
+        for (const session of sessions) {
+          const notices = session.events.filter(
+            (event) =>
+              event.type === "extension_ui_request" &&
+              event.method === "notify" &&
+              String(event.message).includes("pi-sessions was updated; /reload to use it"),
+          );
+          expect(notices).toHaveLength(1);
+          expect(
+            session.events.some(
+              (event) =>
+                event.method === "setStatus" && String(event.statusText).includes("/reload"),
+            ),
+          ).toBe(true);
+        }
+        expect(readFileSync(indexPath)).toEqual(original);
+        expect(publications).toEqual([]);
+      } else if (scenario === "failure") {
+        const record = `${indexPath}.failure.json`;
+        await waitFor("shared recovery failure", () => (existsSync(record) ? true : undefined));
+        blocker?.close();
+        blocker = undefined;
+        const failure = JSON.parse(readFileSync(record, "utf8"));
+        expect(failure.attempts).toBe(1);
+        expect(failure.nextAllowedAt).toBeGreaterThan(Date.now() + 40_000);
+        for (const session of sessions) {
+          await session.tool("session_reachable", {}, true);
+          await session.tool("session_reachable", {}, true);
+        }
+        expect(JSON.parse(readFileSync(record, "utf8"))).toEqual(failure);
+        expect(publications).toEqual([]);
+      } else {
+        await waitFor("current index", () => {
+          if (!existsSync(indexPath)) return undefined;
+          const db = openIndexDatabase(indexPath, { create: false, mode: "read" });
+          try {
+            return getMetadata(db, "schema_version") === String(INDEX_SCHEMA_VERSION)
+              ? true
+              : undefined;
+          } finally {
+            db.close();
+          }
+        });
+        const [parent, peer] = sessions;
+        if (!parent || !peer) throw new Error("Missing test processes");
+        await peer.tool("session_reachable", {});
+        const result = await parent.tool("session_reachable", {});
+        expect(JSON.stringify(result.details)).toContain(ids[1]);
+        expect(JSON.stringify(result.details)).toContain("Recovery peer 1");
+        expect(new Set(publications).size).toBe(1);
+        expect(publications).toHaveLength(1);
+      }
+    } finally {
+      blocker?.close();
+      watcher.close();
+      for (const session of sessions) await session.stop();
+      await waitFor(
+        "broker exit",
+        () => (!existsSync(join(root, "broker/broker.pid")) ? true : undefined),
+        10_000,
+      );
+      cpSync(root, join(artifacts, "fixture"), {
+        recursive: true,
+        filter: (file) => !file.endsWith(".sock"),
+      });
+      rmSync(root, { recursive: true, force: true });
+      console.log(`Recovery smoke artifacts: ${artifacts}`);
+    }
+    writeFileSync(
+      join(artifacts, "result.json"),
+      JSON.stringify(
+        { passed: true, scenario, publications, searchEnabled: false, hooksEnabled: false },
+        null,
+        2,
+      ),
+    );
+  },
+);

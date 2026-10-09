@@ -3,28 +3,37 @@ import {
   findPendingHandoffBootstrap,
   getHandoffMetadataFromEntries,
 } from "../session-handoff/metadata.ts";
-import { createSessionHookController } from "../session-search/hooks.ts";
 import type { IndexHandle, SessionLifecycle } from "../shared/composition.ts";
+import { requestIndexRecovery } from "../shared/session-index/recovery.ts";
+import { createSessionHookController } from "../shared/session-index/sync.ts";
 
-export function installHooks(pi: ExtensionAPI, deps: { index: IndexHandle }): SessionLifecycle {
+export function installHooks(
+  pi: ExtensionAPI,
+  deps: { index: IndexHandle; turnSync: boolean },
+): SessionLifecycle {
   const controller = createSessionHookController({ indexPath: deps.index.path });
 
   pi.on("turn_end", async (_event, ctx) => {
-    await controller.handleTurnEnd(ctx.sessionManager.getSessionFile());
+    if (deps.turnSync) await controller.handleTurnEnd(ctx.sessionManager.getSessionFile());
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    await controller.handleSessionTree(ctx.sessionManager.getSessionFile());
+    if (deps.turnSync) await controller.handleSessionTree(ctx.sessionManager.getSessionFile());
   });
 
   pi.on("session_compact", async (_event, ctx) => {
-    await controller.handleSessionCompact(ctx.sessionManager.getSessionFile());
+    if (deps.turnSync) await controller.handleSessionCompact(ctx.sessionManager.getSessionFile());
   });
 
   return {
     async onSessionStart(event, ctx) {
       const { reason, previousSessionFile } = event;
       const sessionFile = ctx.sessionManager.getSessionFile();
+      void requestIndexRecovery(deps.index.path, true)
+        .then(() => controller.handleSessionStart(ctx.sessionManager.getSessionFile()))
+        .catch((error: unknown) =>
+          ctx.ui.notify(`Session index sync failed: ${String(error)}`, "error"),
+        );
 
       switch (reason) {
         case "new":

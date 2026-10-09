@@ -32,8 +32,7 @@ export default function install(pi: ExtensionAPI): void {
     const last = context.messages.at(-1);
     const tools = getCurrentTools(context.messages);
     if (last?.role === "toolResult") {
-      if (last.isError) throw new Error(`Smoke tool failed: ${contentToText(last.content)}`);
-      return fauxAssistantMessage("SMOKE_TURN_DONE");
+      return fauxAssistantMessage(last.isError ? "SMOKE_TOOL_ERROR" : "SMOKE_TURN_DONE");
     }
     if (tools.some((tool) => tool.name === "create_handoff_context")) {
       return fauxAssistantMessage(

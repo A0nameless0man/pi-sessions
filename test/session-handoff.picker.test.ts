@@ -43,8 +43,8 @@ describe("session handoff picker", () => {
     expect(result.items).toEqual([
       {
         kind: "error",
-        title: "Session index missing or incompatible",
-        description: "Run /session-index to rebuild it.",
+        title: "Session index unavailable",
+        description: "Session indexing in progress; try again shortly.",
       },
     ]);
   });

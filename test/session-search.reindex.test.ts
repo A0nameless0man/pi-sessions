@@ -2,13 +2,13 @@ import { readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { rebuildSessionIndex } from "../extensions/session-search/reindex.ts";
 import {
   initializeSchema,
   openIndexDatabase,
   searchSessions,
   upsertSession,
 } from "../extensions/shared/session-index/index.ts";
+import { rebuildSessionIndex } from "../extensions/shared/session-index/recovery.ts";
 import { createTestFilesystem } from "./test-helpers.ts";
 
 const testFs = createTestFilesystem("pi-sessions-reindex-");
@@ -297,7 +297,7 @@ describe("rebuildSessionIndex", () => {
     expect(relations).toEqual([{ relatedSessionId: "indexed-child" }]);
   });
 
-  it("rebuilds in place so connections opened before the rebuild see the new data", async () => {
+  it("atomically replaces the index while existing readers retain their snapshot", async () => {
     const root = testFs.createTempDir();
     const sessionsDir = path.join(root, "sessions");
     const nestedDir = path.join(sessionsDir, "--repo--");
@@ -323,10 +323,7 @@ describe("rebuildSessionIndex", () => {
     );
     seedDb.close();
 
-    // Simulates another pi process holding a connection while the rebuild runs.
-    // Replacing the database file out from under it would strand it on the old
-    // inode and leave the old WAL sidecar next to the new file.
-    const observer = openIndexDatabase(indexPath, { create: false });
+    const observer = openIndexDatabase(indexPath, { create: false, mode: "read" });
 
     testFs.writeJsonlFile(nestedDir, "2026-03-22T00-00-00-000Z_live.jsonl", [
       {
@@ -346,6 +343,9 @@ describe("rebuildSessionIndex", () => {
       .all() as Array<{ sessionId: string }>;
     observer.close();
 
-    expect(observedIds).toEqual([{ sessionId: "live-session" }]);
+    expect(observedIds).toEqual([{ sessionId: "stale-session" }]);
+    const fresh = openIndexDatabase(indexPath, { create: false, mode: "read" });
+    expect(searchSessions(fresh, {}).map((session) => session.sessionId)).toEqual(["live-session"]);
+    fresh.close();
   });
 });

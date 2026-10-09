@@ -13,6 +13,8 @@ The smoke lane requires tmux and a `pi` CLI matching the installed development d
 
 It runs both standalone and with an independent fake host extension. The host variant checks the host/deferred/subagent enum with tmux present, starts a child in a separate tmux server without `TMUX` or `TMUX_PANE`, verifies automatic bootstrap, reaps it, discovers it as dormant, and wakes it by messaging. The fake host imports no pi-sessions code.
 
+Both variants start without an index. Four additional recovery cases start two Pis together with search and turn-time hooks disabled: fresh creation, an older schema, a newer schema, and a forced publication failure. They verify one atomic publication, reachable-session metadata, a persistent reload warning with byte-for-byte preservation of the newer database, and shared backoff instead of repeated builds.
+
 Each run has a disposable home, agent directory, index, broker directory, and private tmux server. Its settings pin this checkout's package path; parent, peer, and resumed child assert the loaded extension's source path. It does not rewrite global Pi settings or alter production resume commands. Shell configuration, other extensions, and provider credentials are not inherited. Auto-title is disabled.
 
 Artifacts live under `.mise/smoke/<run>/`: RPC events and stderr, worker pane text, the disposable transcripts and index, and `result.json` only after all checks and cleanup succeed. Failures retain `failure.txt` and surviving pane captures. The broker's latest startup output is in `broker/broker.log` inside the captured fixture. Outside the harness, the broker writes the same private log in its messaging directory and names it in startup errors.
@@ -187,17 +189,16 @@ Expected:
 
 ## 9. Recovery test
 
-If hooks were disabled or the DB was removed/corrupted:
+Using disposable state, disable hooks or remove/corrupt the index:
 
 - reopen Pi
-- run `/session-index`
-- press `r`
-- confirm rebuild
+- wait for background indexing, then query sessions
+- open `/session-index` to inspect status; `r` remains available for an explicit rebuild
 
 Expected:
 
 - historical sessions are restored to the sidecar index
-- search works again without query-time repair behavior
+- search works again without a manual rebuild; a query during recovery asks you to retry shortly
 
 ## 10. Verify auto-titling
 

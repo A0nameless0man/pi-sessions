@@ -39,6 +39,7 @@ Pi loads extension code directly from TypeScript source. Only the detached messa
 
 - Wrap multi-step writes in `db.transaction(fn)` which enforces immediate — a deferred read-then-write transaction fails with `SQLITE_BUSY` on the snapshot upgrade
 - SQLite is accessed via each runtime's built-in driver: `bun:sqlite` under bun, `node:sqlite` otherwise
+- Index callers use `withSessionIndex`: it validates schema read-only, starts recovery on a miss, and serializes writes with rebuilds. The index uses rollback journals so atomic file replacement cannot mix old WAL sidecars with a new database. Never unlink the companion `.lock.sqlite`; SQLite releases its lock when a process exits.
 - use `.ts` extensions for repo-local imports
 - the broker runs under raw Node with no `node_modules` beside it; nothing in its import graph may import a package, TypeBox included
 - pi tracks `main` for git installs, so every commit must carry a `dist/` that matches its source; the pre-commit hook rejects a stale one
@@ -49,8 +50,8 @@ Pi loads extension code directly from TypeScript source. Only the detached messa
 - **Shared ports** at `extensions/shared/composition.ts`.
 - **Session search**: `extensions/session-search/install.ts`; result rendering at `extensions/session-search/renderer.ts`; core logic at `extensions/session-search/` and `extensions/shared/session-index/`.
 - **Session ask**: `extensions/session-ask/install.ts`; navigation agent logic at `extensions/session-ask/`; retrieval support at `extensions/shared/session-index/`.
-- **Session index**: `extensions/session-index/install.ts`; core logic at `extensions/session-search/reindex.ts` and `extensions/shared/session-index/`.
-- **Session hooks**: `extensions/session-hooks/install.ts`; core logic at `extensions/session-search/hooks.ts`.
+- **Session index**: `extensions/session-index/install.ts`; recovery and reconciliation at `extensions/shared/session-index/recovery.ts`.
+- **Session hooks**: `extensions/session-hooks/install.ts`; incremental sync at `extensions/shared/session-index/sync.ts`. Startup/switch sync runs independently of feature toggles.
 - **Session handoff**: `extensions/session-handoff/install.ts`; core logic at `extensions/session-handoff/`.
 - **Hosts**: public event contract and runtime registration at `extensions/hosts/`; the composition root discovers hosts at session start and composes host and subagent wakers through `extensions/session-messaging/message-router.ts`.
 - **Session messaging**: `extensions/session-messaging/install.ts`; broker/client/runtime logic and reachable-session discovery at `extensions/session-messaging/`.

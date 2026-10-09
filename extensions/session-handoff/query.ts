@@ -1,5 +1,6 @@
 import { stripSearchSnippetMarkers } from "../shared/search-snippet.ts";
 import {
+  formatRequiredSessionIndexError,
   getSessionByPath,
   type SearchSessionResult,
   type SessionIndexDatabase,
@@ -100,7 +101,7 @@ export function listSessionPickerItems(
           defaultScopeLabel,
         };
       }) ?? {
-        items: [buildIndexErrorItem()],
+        items: [buildIndexErrorItem(options.indexPath)],
         scopeMode,
         defaultScopeLabel,
       }
@@ -309,11 +310,11 @@ function getSessionMarker(
   }
 }
 
-function buildIndexErrorItem(): SessionPickerNoticeItem {
+function buildIndexErrorItem(indexPath: string): SessionPickerNoticeItem {
   return {
     kind: "error",
-    title: "Session index missing or incompatible",
-    description: "Run /session-index to rebuild it.",
+    title: "Session index unavailable",
+    description: formatRequiredSessionIndexError(indexPath),
   };
 }
 

@@ -148,6 +148,7 @@ export interface SessionIndexStatus {
   schemaVersion?: number | undefined;
   sessionCount?: number | undefined;
   lastFullReindexAt?: string | undefined;
+  recoveryMessage?: string | undefined;
 }
 
 export type SessionIndexDatabase = SqliteDatabase;

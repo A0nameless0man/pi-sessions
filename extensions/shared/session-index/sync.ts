@@ -1,5 +1,15 @@
 import { existsSync, type Stats, statSync } from "node:fs";
 import {
+  createSessionNameChunk,
+  type ExtractedSessionRecord,
+  type ExtractedSessionTail,
+  extractSessionRecord,
+  extractSessionTail,
+  inferSessionOrigin,
+  type SessionFileTouch,
+} from "../../session-search/extract.ts";
+import { deriveSessionRepoRoots } from "../../session-search/normalize.ts";
+import {
   clearSessionChunksBySourceKind,
   clearSessionIndexedData,
   getSessionById,
@@ -14,17 +24,7 @@ import {
   setMetadata,
   upsertSession,
   withSessionIndex,
-} from "../shared/session-index/index.ts";
-import {
-  createSessionNameChunk,
-  type ExtractedSessionRecord,
-  type ExtractedSessionTail,
-  extractSessionRecord,
-  extractSessionTail,
-  inferSessionOrigin,
-  type SessionFileTouch,
-} from "./extract.ts";
-import { deriveSessionRepoRoots } from "./normalize.ts";
+} from "./index.ts";
 
 export interface SessionHookController {
   handleSessionStart(sessionFile: string | undefined): Promise<boolean>;
@@ -107,31 +107,55 @@ interface TailSyncBaseline extends SessionRow {
   indexedFileAnchor: string;
 }
 
-function syncSessionFileWithDb(
+export function syncSessionFileWithDb(
   db: SessionIndexDatabase,
   sessionFile: string,
   eventType: string,
   sessionOrigin?: SessionOrigin,
 ): boolean {
   const baseline = asTailSyncBaseline(getSessionRowByPath(db, sessionFile));
-  const stat = statSync(sessionFile);
+  let stat: Stats;
+  try {
+    stat = statSync(sessionFile);
+  } catch {
+    return false;
+  }
 
   if (baseline && isIndexCurrent(baseline, stat, sessionOrigin)) {
-    db.transaction(() => writeHookSyncMetadata(db, eventType));
+    if (eventType !== "reconcile") db.transaction(() => writeHookSyncMetadata(db, eventType));
     return true;
   }
 
   if (baseline && stat.size > baseline.indexedFileSize) {
-    const tail = extractSessionTail(sessionFile, baseline);
+    let tail: ExtractedSessionTail | undefined;
+    try {
+      tail = extractSessionTail(sessionFile, baseline);
+    } catch {
+      return false;
+    }
     if (tail && applyTailSync(db, baseline, tail, eventType, sessionOrigin)) {
       return true;
     }
   }
 
-  const extracted = extractSessionRecord(sessionFile);
+  let extracted: ExtractedSessionRecord | undefined;
+  try {
+    extracted = extractSessionRecord(sessionFile);
+  } catch {
+    return false;
+  }
   if (!extracted) {
     return false;
   }
+
+  const existing = getSessionById(db, extracted.sessionId);
+  if (
+    existing &&
+    existing.sessionPath !== sessionFile &&
+    (existing.modifiedAt > extracted.modifiedAt ||
+      (existing.modifiedAt === extracted.modifiedAt && existing.sessionPath > sessionFile))
+  )
+    return true;
 
   applyFullSync(db, extracted, eventType, sessionOrigin);
   return true;

@@ -22,7 +22,12 @@ export function openIndexDatabase(
 ): SessionIndexDatabase {
   const create = options?.create ?? true;
   const readonly = options?.mode === "read";
-  return openSqlite(dbPath, { create, readonly, timeoutMs: options?.timeoutMs });
+  return openSqlite(dbPath, {
+    create,
+    readonly,
+    timeoutMs: options?.timeoutMs,
+    journalMode: "DELETE",
+  });
 }
 
 export function initializeSchema(db: SessionIndexDatabase): void {
@@ -180,6 +185,9 @@ export function getIndexStatus(dbPath: string): SessionIndexStatus {
   try {
     db = openIndexDatabase(dbPath, { create: false, mode: "read" });
     const schemaVersionRaw = getMetadata(db, "schema_version");
+    if (Number(schemaVersionRaw) !== INDEX_SCHEMA_VERSION) {
+      return { dbPath, exists: true, schemaVersion: Number(schemaVersionRaw) };
+    }
     const lastFullReindexAt = getMetadata(db, "indexed_at");
     const sessionCountRow = parseTypeBoxValue(
       ROW_COUNT_SCHEMA,

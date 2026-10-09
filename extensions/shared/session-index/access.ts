@@ -6,6 +6,13 @@ import {
   type SessionIndexDatabase,
   type SessionIndexStatus,
 } from "./common.ts";
+import {
+  acquireIndexLock,
+  disableOlderIndexClient,
+  getIndexRecoveryMessage,
+  isIndexClientDisabled,
+  requestIndexRecovery,
+} from "./recovery.ts";
 import { getMetadata, openIndexDatabase } from "./schema.ts";
 
 export type SessionIndexOpenMode = "read" | "write";
@@ -67,28 +74,57 @@ function openValidatedSessionIndexInternal(
   indexPath: string,
   options: WithSessionIndexOptions,
 ): ValidSessionIndex | undefined {
+  if (isIndexClientDisabled(indexPath)) return handleUnavailableIndex(indexPath, options);
   if (!existsSync(indexPath)) {
     return handleUnavailableIndex(indexPath, options);
   }
 
   let db: SessionIndexDatabase | undefined;
+  let release: (() => void) | undefined;
   try {
+    if (options.mode === "write") {
+      release = acquireIndexLock(indexPath);
+      if (!release) return handleUnavailableIndex(indexPath, options);
+    }
     db = openIndexDatabase(indexPath, {
       create: false,
-      mode: options.mode,
+      mode: "read",
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     });
-    const status = getIndexStatusFromDb(indexPath, db);
-    if (status.schemaVersion !== INDEX_SCHEMA_VERSION) {
+    const version = Number(getMetadata(db, "schema_version"));
+    if (version !== INDEX_SCHEMA_VERSION) {
       const invalidDb = db;
       db = undefined;
       invalidDb.close();
+      release?.();
+      release = undefined;
+      if (version > INDEX_SCHEMA_VERSION) disableOlderIndexClient(indexPath);
       return handleUnavailableIndex(indexPath, options);
     }
-
+    const status = getIndexStatusFromDb(indexPath, db);
+    if (options.mode === "write") {
+      db.close();
+      db = undefined;
+      db = openIndexDatabase(indexPath, {
+        create: false,
+        mode: "write",
+        timeoutMs: options.timeoutMs,
+      });
+      const close = db.close;
+      const unlock = release;
+      db.close = () => {
+        try {
+          close();
+        } finally {
+          unlock?.();
+        }
+      };
+      release = undefined;
+    }
     return { db, status };
   } catch (error) {
     db?.close();
+    release?.();
     return handleUnavailableIndex(indexPath, options, error);
   }
 }
@@ -112,7 +148,7 @@ export function getIndexStatusFromDb(dbPath: string, db: SessionIndexDatabase): 
 }
 
 export function formatRequiredSessionIndexError(indexPath: string): string {
-  return `Session index missing or incompatible at ${indexPath}. Run /session-index and press r to rebuild it.`;
+  return getIndexRecoveryMessage(indexPath) ?? "Session indexing in progress; try again shortly.";
 }
 
 function handleUnavailableIndex(
@@ -120,6 +156,7 @@ function handleUnavailableIndex(
   options: WithSessionIndexOptions,
   cause?: unknown,
 ): undefined {
+  if (!isIndexClientDisabled(indexPath)) void requestIndexRecovery(indexPath);
   if (!options.required) {
     return undefined;
   }

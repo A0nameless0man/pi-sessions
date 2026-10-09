@@ -47,7 +47,12 @@ function loadDatabaseConstructor(): SqliteConstructor {
 
 export function openSqlite(
   dbPath: string,
-  options: { create: boolean; readonly?: boolean | undefined; timeoutMs?: number | undefined },
+  options: {
+    create: boolean;
+    readonly?: boolean | undefined;
+    timeoutMs?: number | undefined;
+    journalMode?: "DELETE" | "WAL";
+  },
 ): SqliteDatabase {
   const Database = loadDatabaseConstructor();
   const readonly = options.readonly ?? false;
@@ -66,15 +71,20 @@ export function openSqlite(
       })
     : new Database(dbPath, { readOnly: readonly });
 
-  db.exec(`PRAGMA busy_timeout = ${options.timeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS}`);
-  db.exec("PRAGMA foreign_keys = ON");
+  try {
+    db.exec(`PRAGMA busy_timeout = ${options.timeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS}`);
+    db.exec("PRAGMA foreign_keys = ON");
 
-  if (!readonly) {
-    // journal_mode is the connection's first write-capable lock acquisition (and
-    // may run WAL recovery), and immediate transactions rely on busy_timeout to
-    // queue behind concurrent writers instead of failing.
-    db.exec("PRAGMA journal_mode = WAL");
-    db.exec("PRAGMA synchronous = NORMAL");
+    if (!readonly) {
+      // journal_mode is the connection's first write-capable lock acquisition (and
+      // may run WAL recovery), and immediate transactions rely on busy_timeout to
+      // queue behind concurrent writers instead of failing.
+      db.exec(`PRAGMA journal_mode = ${options.journalMode ?? "WAL"}`);
+      db.exec("PRAGMA synchronous = NORMAL");
+    }
+  } catch (error) {
+    db.close();
+    throw error;
   }
 
   return withStatementCache(db);

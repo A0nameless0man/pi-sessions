@@ -2,7 +2,6 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it } from "vitest";
-import { createSessionHookController } from "../extensions/session-search/hooks.ts";
 import {
   getMetadata,
   initializeSchema,
@@ -10,6 +9,7 @@ import {
   searchSessions,
   setMetadata,
 } from "../extensions/shared/session-index/index.ts";
+import { createSessionHookController } from "../extensions/shared/session-index/sync.ts";
 import { createTestFilesystem } from "./test-helpers.ts";
 
 const testFs = createTestFilesystem("pi-sessions-hooks-");
