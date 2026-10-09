@@ -2,6 +2,17 @@
 
 <!-- markdownlint-disable MD024 -->
 
+## [0.16.0] - 2026-10-09
+
+### Fixed
+
+- Session indexes recover automatically and reconcile transcripts at startup, even with search disabled. Concurrent rebuilds coordinate, preserve unreadable databases, skip malformed transcripts, and back off after failures. `/session-index` can rebuild immediately.
+- Older clients show a persistent `/reload` warning instead of using or downgrading newer index schemas.
+
+### Changed
+
+- Updated Pi development dependencies to 1.0.4 and Renovate to 44.138.0.
+
 ## [0.15.0] - 2026-10-08
 
 - **Host extension API** - Other Pi extensions can now decide where handoff sessions run, and let messages wake their dormant sessions. See [Host extension API (v1)](README.md#host-extension-api-v1).
