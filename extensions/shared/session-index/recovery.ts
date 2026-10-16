@@ -49,15 +49,27 @@ export function observeIndexRecovery(
 ): void {
   notices.set(indexPath, notify);
   const message = getIndexRecoveryMessage(indexPath);
-  notify(message);
+  notifySafe(indexPath, message);
   if (message) shown.set(indexPath, message);
+}
+
+// Registered notice closures may hold a ctx that went stale after session
+// replacement or reload; invoking one is best-effort and must never reject
+// the index pipeline. String messages still surface via console.error.
+function notifySafe(indexPath: string, message: string | undefined): void {
+  const notify = notices.get(indexPath);
+  if (!notify) return;
+  try {
+    notify(message);
+  } catch {
+    if (message) console.error(message);
+  }
 }
 
 function report(indexPath: string, message: string): void {
   if (shown.get(indexPath) === message) return;
   shown.set(indexPath, message);
-  const notify = notices.get(indexPath);
-  if (notify) notify(message);
+  if (notices.has(indexPath)) notifySafe(indexPath, message);
   else console.error(message);
 }
 
@@ -194,7 +206,7 @@ async function recover(
     }
     const rebuild = manual || corrupt || version !== INDEX_SCHEMA_VERSION;
     if (!rebuild && !reconcile) {
-      if (!failure) notices.get(indexPath)?.(undefined);
+      if (!failure) notifySafe(indexPath, undefined);
       return undefined;
     }
     db = openIndexDatabase(rebuild ? temp : indexPath, { create: rebuild });
@@ -240,7 +252,7 @@ async function recover(
     }
     rmSync(`${indexPath}.failure.json`, { force: true });
     shown.delete(indexPath);
-    notices.get(indexPath)?.(undefined);
+    notifySafe(indexPath, undefined);
     if (skipped.length)
       report(
         indexPath,

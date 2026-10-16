@@ -10,6 +10,7 @@ import {
   withSessionIndex,
 } from "../extensions/shared/session-index/index.ts";
 import {
+  disableOlderIndexClient,
   observeIndexRecovery,
   readIndexRecoveryFailure,
   rebuildSessionIndex,
@@ -166,4 +167,23 @@ it("persists failure backoff and lets a manual rebuild bypass it without destroy
   const db = openIndexDatabase(indexPath, { create: false, mode: "read" });
   expect(getMetadata(db, "schema_version")).toBe(String(INDEX_SCHEMA_VERSION));
   db.close();
+});
+
+it("a stale notice closure never rejects the recovery pipeline (crash regression)", async () => {
+  const { root, indexPath } = fixture();
+  void root;
+  // Simulate the crash: a notice closure holding a ctx that pi retired after
+  // session replacement throws on every touch, exactly like the real
+  // uncaughtException reported against session-index/install.ts.
+  observeIndexRecovery(indexPath, () => {
+    throw new Error(
+      "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload().",
+    );
+  });
+  const result = await requestIndexRecovery(indexPath);
+  expect(result?.sessionCount).toBe(1);
+  const reconciled = await requestIndexRecovery(indexPath, true);
+  expect(reconciled?.sessionCount).toBe(1);
+  // Last: this call disables the index client for this path.
+  expect(() => disableOlderIndexClient(indexPath)).not.toThrow();
 });

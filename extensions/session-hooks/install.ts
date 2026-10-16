@@ -4,6 +4,7 @@ import {
   getHandoffMetadataFromEntries,
 } from "../session-handoff/metadata.ts";
 import type { IndexHandle, SessionLifecycle } from "../shared/composition.ts";
+import { safeNotify } from "../shared/ctx-safety.ts";
 import { requestIndexRecovery } from "../shared/session-index/recovery.ts";
 import { createSessionHookController } from "../shared/session-index/sync.ts";
 
@@ -28,11 +29,15 @@ export function installHooks(
   return {
     async onSessionStart(event, ctx) {
       const { reason, previousSessionFile } = event;
+      // Capture before the fire-and-forget chain: index recovery can run long
+      // after this session's ctx is replaced (new/resume/fork/reload), and
+      // every ctx getter asserts liveness. The sync targets the session that
+      // just started, so the start-time file is also the correct value.
       const sessionFile = ctx.sessionManager.getSessionFile();
       void requestIndexRecovery(deps.index.path, true)
-        .then(() => controller.handleSessionStart(ctx.sessionManager.getSessionFile()))
+        .then(() => controller.handleSessionStart(sessionFile))
         .catch((error: unknown) =>
-          ctx.ui.notify(`Session index sync failed: ${String(error)}`, "error"),
+          safeNotify(ctx, `Session index sync failed: ${String(error)}`, "error"),
         );
 
       switch (reason) {

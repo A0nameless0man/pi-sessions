@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { IndexHandle, SessionLifecycle } from "../shared/composition.ts";
+import { isStaleContextError, safeNotify } from "../shared/ctx-safety.ts";
 import { isTuiMode } from "../shared/pi-mode.ts";
 import { getIndexStatus } from "../shared/session-index/index.ts";
 import {
@@ -58,11 +59,12 @@ export function installIndex(
 
       const result = await runReindexWithLoader(ctx, indexPath);
       if (!result) {
-        ctx.ui.notify("Reindex cancelled.", "info");
+        safeNotify(ctx, "Reindex cancelled.", "info");
         return;
       }
 
-      ctx.ui.notify(
+      safeNotify(
+        ctx,
         `Indexed ${result.sessionCount} sessions and ${result.chunkCount} text chunks.`,
         "info",
       );
@@ -73,9 +75,16 @@ export function installIndex(
     path: indexPath,
     onSessionStart(_event, ctx) {
       observeIndexRecovery(indexPath, (message) => {
-        ctx.ui.setStatus("session-index", message);
-        if (message && message !== lastNotice && !message.includes("in progress")) {
-          ctx.ui.notify(message, "error");
+        // Recovery completes asynchronously and can outlive this session's ctx
+        // (new/resume/fork/reload). The next session_start re-registers a
+        // fresh closure with a fresh ctx, so a dropped update self-heals.
+        try {
+          ctx.ui.setStatus("session-index", message);
+          if (message && message !== lastNotice && !message.includes("in progress")) {
+            ctx.ui.notify(message, "error");
+          }
+        } catch (error) {
+          if (!isStaleContextError(error)) throw error;
         }
         lastNotice = message;
       });
@@ -95,7 +104,9 @@ async function runReindexWithLoader(
         const result = await rebuildSessionIndex({ indexPath });
         done(result);
       } catch (error) {
-        ctx.ui.notify(`Reindex failed: ${String(error)}`, "error");
+        // The overlay can outlive the command's ctx (session replaced mid
+        // reindex); never let UI feedback reject this fire-and-forget chain.
+        safeNotify(ctx, `Reindex failed: ${String(error)}`, "error");
         done(null);
       }
     })();
