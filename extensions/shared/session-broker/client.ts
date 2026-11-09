@@ -102,6 +102,11 @@ export class SessionMessagingClient extends EventEmitter {
             this.emit("disconnect");
           }
         });
+        // broker 是 detached 守护进程，client socket 不应阻止宿主进程退出：
+        // -p/--no-session 等无会话生命周期路径不会触发 onSessionShutdown 的
+        // disconnect()，ref'd socket 会让 node 永不退出（Windows 实测挂死）。
+        // 交互模式进程常驻，unref 不改变任何行为。
+        socket.unref();
         resolve();
       };
       const onRegisterFailed = (reason: string): void => fail(new Error(reason));

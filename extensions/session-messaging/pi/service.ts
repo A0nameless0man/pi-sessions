@@ -499,6 +499,8 @@ class BrokerConnection {
       this.reconnectTimer = undefined;
       this.ensureConnectedNow().catch(() => {});
     }, delayMs);
+    // 与 client socket 的 unref 同理：重连等待不应阻止无生命周期路径退出
+    this.reconnectTimer.unref();
   }
 
   private clearReconnectTimer(): void {
